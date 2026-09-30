@@ -1,0 +1,9 @@
+.git
+.next
+.next-dev
+node_modules
+*.log
+.env*
+tests
+server-module
+storefront-module

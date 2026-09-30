@@ -1,4 +1,6 @@
 "use client";
+import StorefrontSections from "./storefront-sections";
+import SealedProducts from "./sealed-products";
 import CardImport from "./card-import";
 import ConditionStock from "./condition-stock";
 import InlineField from "./inline-field";
@@ -59,19 +61,23 @@ type Row = {
   };
 };
 type Page =
+  | "storefront"
   | "overview"
   | "cards"
   | "sets"
   | "stock"
+  | "sealed"
   | "orders"
   | "import"
   | "card_import"
   | "settings";
 const navigation: { id: Page; label: string; icon: string }[] = [
+  { id: "storefront", label: "Storefront sections", icon: "◧" },
   { id: "overview", label: "Overview", icon: "◫" },
   { id: "cards", label: "Card catalog", icon: "▤" },
   { id: "sets", label: "Sets", icon: "◈" },
   { id: "stock", label: "Inventory", icon: "▦" },
+  { id: "sealed", label: "Sealed products", icon: "▣" },
   { id: "orders", label: "Orders", icon: "▣" },
 ];
 const money = (n = 0, currency = "CLP") =>
@@ -183,6 +189,8 @@ export default function Cms() {
       session !== "in" ||
       page === "import" ||
       page === "card_import" ||
+      page === "storefront" ||
+      page === "sealed" ||
       page === "settings"
     )
       return;
@@ -565,11 +573,14 @@ export default function Cms() {
               <p>
                 {
                   {
+                    storefront: "Choose which sections customers can see.",
                     overview:
                       "A clear view of what’s in store and what’s next.",
                     cards: "Every printing, ready for its next collector.",
                     sets: "The building blocks of your card catalog.",
                     stock: "Receive new stock and keep your shelves in sync.",
+                    sealed:
+                      "Manage sealed groups, products, prices and warehouse stock.",
                     orders: "Follow every order, from checkout to completion.",
                     import:
                       "Bring entire sets and their card printings into your catalog.",
@@ -599,6 +610,7 @@ export default function Cms() {
               ✓ {notice}
             </div>
           )}
+          {page === "storefront" && <StorefrontSections/>}
           {page === "overview" && (
             <>
               <div className="stats">
@@ -720,6 +732,9 @@ export default function Cms() {
               ← Back to {page === "import" ? "sets" : "card catalog"}
             </button>
           )}
+          {page === "sealed" && (
+            <SealedProducts request={api} locations={locations} />
+          )}
           {page === "card_import" && (
             <CardImport locations={locations} request={api} />
           )}
@@ -767,7 +782,8 @@ export default function Cms() {
                 </form>
                 {busy && (
                   <p role="status" className="muted">
-                    Keep this page open while cards are imported and their images are copied to your storage.
+                    Keep this page open while cards are imported and their
+                    images are copied to your storage.
                   </p>
                 )}
                 {results.length > 0 && (

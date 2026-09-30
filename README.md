@@ -78,3 +78,26 @@ For production, run `pnpm build && pnpm start` behind HTTPS (the session cookie 
 - Local development uses MinIO: image endpoint port 9002, dashboard port 9003. Configure storage credentials in the backend environment; credentials are not included here. Existing images can be migrated with backend `pnpm images:sync`.
 
 This repository contains the CMS plus integration overlays, not the complete backend or storefront. Their existing catalog modules and supporting services are required. Merge overlays into their respective projects and rebuild the backend after changes.
+
+## Sealed products
+
+Open **Sealed products** in the sidebar to manage the same groups/products used by the storefront. Filter by group or search by name. Use **New sealed product** to enter its name, category, set, language, optional SKU, CLP price and image URL; new products start with zero inventory. **Edit product** changes details and Draft/Published status. Prices save inline. Choose a warehouse and adjustment quantity, then use **+ / −** to receive or subtract stock; reserved stock cannot be subtracted. Existing multi-item inventory variants require inventory setup outside these controls.
+
+### Find sealed products and artwork
+
+Use **Sealed products → Find products by set**, select Magic: The Gathering, and enter a set code such as SOS. If automatic lookup fails, provide the official English WPN product-page URL. Review the products and graphics, select items, then click **Accept & save selected items**. Search alone saves nothing. New products are drafts without prices or stock; existing products are skipped. Graphics are stored separately under `sealed/magic-the-gathering/<set>/graphics`, with archive downloads kept intact. Per-file limit is 64MB; failed items are reported individually and saved items are reused on retry.
+
+Rows support Draft/Published dropdowns, inline CLP pricing and local +/- stock updates. Click the product name to edit its other details.
+
+## AWS deployment pipeline
+
+`.github/workflows/deploy-cms.yml` follows the storefront/backend pipelines: pushes to `main` (or a manual GitHub Actions run) build a Docker image tagged with the commit SHA, push it to ECR, and deploy a new ECS task revision while waiting for service stability.
+
+Before the first run, configure these existing AWS/GitHub resources:
+
+- GitHub environment `production` with secret `AWS_ROLE_ARN`. The role's GitHub OIDC trust must allow `repo:krist601/bannedCardsCms:environment:production` and the `sts.amazonaws.com` audience.
+- The role needs ECR push, ECS task-definition read/register and service deployment permissions, plus permission to pass the task's execution/task roles, following the backend/frontend deployment roles.
+- Region `us-east-2`, ECR repository `banned-cards-cms`, ECS cluster `banned-cards`, service and task-definition family `banned-cards-cms`, container name `cms`. Adjust workflow values if the provisioned names differ.
+- The ECS container listens on port `3001`. Set its runtime `MEDUSA_BACKEND_URL` to the deployed backend URL reachable from ECS; the Docker default `http://backend:9000` is only suitable if that hostname resolves in your deployment. Serve the CMS through HTTPS.
+
+The workflow preserves the current task definition's environment, secrets and infrastructure settings. It deploys the CMS only; changes under `server-module` must also be installed and deployed through the backend repository. AWS infrastructure is not created by this workflow.

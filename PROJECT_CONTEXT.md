@@ -1,5 +1,7 @@
 # Project context
 
+- AWS workflow: `.github/workflows/deploy-cms.yml` mirrors sibling frontend/backend ECS pipelines (main/manual, production AWS_ROLE_ARN OIDC, us-east-2, banned-cards cluster, banned-cards-cms ECR/service/task family, cms container). Requires preprovisioned resources and runtime MEDUSA_BACKEND_URL; see README. Adding workflow locally does not activate deployment until pushed.
+
 ## Locations and runtime
 - CMS: this directory, Next.js 15 / React 19, port 3001, `pnpm dev`.
 - Backend: ../bannedCards-server, Medusa 2.21, port 9000. Requested bannerCards-server path was a typo.
@@ -61,3 +63,29 @@
 - sync-card-images supports set=CODE for scoped imports, or no set for whole-catalog migration. Stores normal/small URLs in printing.image_url/image_small_url and storage metadata, updates linked product thumbnails. Original Scryfall URLs remain source metadata for recovery only.
 - Set icons already stored by sync-set-directory. audit-image-storage script reports owned/external active URLs and tests a stored image HEAD without exposing credentials.
 - Completed image migration: 368 newly synced, 856 already stored, 0 failures. Final audit: all 2,448 card image URLs (1,224 printings), 1,051 set icons, and 55 product thumbnails use configured MinIO; no missing/external active URLs. Stored image HEAD returned 200. Backend built/restarted; 44 CMS tests and 7 backend image/import tests passed.
+
+## Sealed product management
+- src/components/sealed-products.tsx is the Sealed products sidebar screen. Uses existing Medusa category tree rooted at sealed-products: Bundles, Precons, Booster boxes, Booster packs, Extras (no separate CMS catalogue).
+- server-module/src/lib/cms-sealed.ts handles GET resource=sealed and sealed_create/sealed_save/sealed_price/sealed_stock through the authenticated CMS route.
+- Lists/searches products by group; creates managed single-language variants with CLP price and zero stock; edits details/category/image/draft-published status; updates variant base CLP price; adjusts warehouse stock under inventory locks while respecting reservations. Multi-item inventory variants are read-only for stock.
+- Product metadata, unrelated categories and other currency prices are preserved. Image edits update thumbnail plus storefront image_url/product_cutout overrides. Existing product languages/SKUs are displayed; creating a new product accepts language and optional SKU.
+- Validation: 52 tests passing, CMS/backend typechecks and backend build passed. Read-only live audit found 36 sealed products: Bundles7, Precons2, Booster boxes10, Booster packs9, Extras8, with working CLP prices/inventory. Browser verified CMS login loads; authenticated screen inspection requires sign-in. No test stock or products added.
+
+## Sealed bulk finder and inline rows
+- SealedFinder previews official WPN set products and graphics for MTG set codes (optional explicit WPN page URL when derived slug differs). Nuxt data is parsed as JSON, never evaluated; code must match the official page.
+- cms-sealed-finder.ts: sealed_find is read-only; one-hour signed preview snapshots gate sealed_accept. Only selected entries are saved. Products use draft status, zero stock and no invented CLP price. Positive CLP price is required before publication. Legacy uppercase set codes and shared pack/display SKUs are handled by name/source-ID duplicate matching.
+- Assets use Medusa S3 file module with separate sealed/magic-the-gathering/{code}/products and /graphics prefixes. ZIP/PDF downloads remain intact; 64MB per asset. Metadata.sealed_assets is a reusable source-to-storage manifest; original sources retained. No mutation during discovery.
+- Status dropdowns patch product state; +/- returns refreshed inventory levels and patches only that row with local action loading. Edit opens via product name; Actions contain only +/-; purple search button.
+- 60 tests passed; CMS/backend typechecks and backend build passed. Live SOS preview: 10 products (7 already present), 66 graphics/download entries; browser preview verified. No discovery items were accepted during verification.
+
+## Sealed set banners
+- Downloading graphics does not automatically choose a banner. Finder → enter set code → Manage saved set banner → Use as set banner selects a stored raster image (ZIP/PDF excluded).
+- sealed_graphics/sealed_banner actions list saved graphics and assign metadata.sealed_banner_url/asset_id on the set; updates same-set sealed product banner_image under locks, preserving metadata. Future finder imports inherit the chosen banner. Storefront already consumes banner_image.
+- Assigned existing TMT Header from S3 to TMT. CMS/backend typechecks, backend build and 7 finder tests pass (61 total tests including prior suite).
+- Sealed create/edit now use native modal dialogs (focus trapping, Escape/Cancel, inline error). Toolbar Refresh removed; New product sits at right; Search font matches buttons.
+- Finder parses official WPN USD MSRP, fetches recent USD/CLP from mindicador.cl/api/dolar, shows dated CLP estimates in signed preview and saves them to draft variants on acceptance. Missing MSRP/rate stays unpriced; existing products/prices never overwritten. price_estimate metadata keeps provenance. 62 tests pass, both typechecks and backend build pass.
+- Sealed finder also opens in a wide, scrollable native modal; Close/Escape dismiss it except during active work. Browser opening/Escape and typecheck verified.
+
+- Storefront sections navigation uses `storefront-sections.tsx` and CMS resource/action `storefront_settings`. Strict boolean settings persist in Medusa store metadata.storefront_sections, retaining unrelated metadata. Public GET /store/storefront-settings exposes flags only. Master sealed flag hides nav/Home content and guards sealed routes/API; individual controls manage Home banner/rows, sealed landing sections, and bottom service cards. Defaults enabled. Mirrors under server-module stay synchronized.
+- Rebuilt/restarted using shared launcher; live public settings API returns HTTP 200 and 13 flags. CMS route regression covers read/save/read and invalid payloads; 63 tests pass. Settings UI validates response before rendering. Dev output uses .next-dev separately from production .next to avoid build corruption; production build passes.
+- Deployment audit: GitHub currently has no workflows in CMS/backend/frontend remotes; CMS repository has no Actions secrets or production environment. Local ../deployment describes Lightsail, while workflow templates target ECS. Confirm actual hosting/access before activating deployment; do not claim AWS upload succeeded without live verification.

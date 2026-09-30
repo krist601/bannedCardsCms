@@ -86,10 +86,40 @@ const stockImport = load("server-module/src/lib/cms-stock-import.ts");
 const setGroups = load("server-module/src/lib/cms-set-groups.ts");
 const visibleSets = load("server-module/src/lib/cms-visible-sets.ts", {"./cms-set-groups":setGroups});
 const calls = [];
+const sectionRules = load("server-module/src/lib/storefront-sections.ts");
+const settingsHandlers = load("server-module/src/lib/storefront-settings.ts", {
+  "@medusajs/framework/utils": { Modules: { STORE: "store" } },
+  "./storefront-sections": sectionRules,
+});
+test("storefront settings route loads, saves and reads visibility without losing metadata", async () => {
+  const store = { id: "store_1", metadata: { other: "retained", storefront_sections: { homeSingles: false } } };
+  const scope = { resolve: name => name === "store" ? {
+    listStores: async () => [store],
+    updateStores: async (id, data) => { assert.equal(id, store.id); store.metadata = data.metadata; },
+  } : {} };
+  const read = response(); read.setHeader = () => {};
+  await routes.GET({ scope, query: { resource: "storefront_settings" } }, read);
+  assert.equal(read.body.settings.homeSingles, false);
+  assert.equal(read.body.settings.sealed, true);
+  const saved = response();
+  await routes.POST({ scope, body: { action: "storefront_settings", settings: { sealed: false } } }, saved);
+  assert.equal(saved.body.settings.sealed, false);
+  assert.equal(store.metadata.other, "retained");
+  await routes.GET({ scope, query: { resource: "storefront_settings" } }, read);
+  assert.equal(read.body.settings.sealed, false);
+  for (const settings of [{ sealed: "false" }, { unknown: true }, [], null]) {
+    const invalid = response();
+    await routes.POST({ scope, body: { action: "storefront_settings", settings } }, invalid);
+    assert.equal(invalid.code, 400);
+  }
+});
 const routes = load("server-module/src/api/admin/cms/route.ts", {
+  "../../../lib/storefront-settings": settingsHandlers,
   "../../../lib/cms-set-groups": setGroups,
   "../../../lib/cms-catalog-sort": catalogSort,
   "../../../lib/cms-visible-sets": visibleSets,
+  "../../../lib/cms-sealed-finder": {sealedFinder:()=>{}},
+  "../../../lib/cms-sealed": {getSealed:()=>{},postSealed:()=>{}},
   "../../../lib/cms-stock-import": stockImport,
   "node:crypto": {
     randomUUID: () => `generated-internal-id-${++generatedIds}`,

@@ -18,11 +18,17 @@ async function handle(
   context: { params: Promise<{ path: string[] }> },
 ) {
   const path = (await context.params).path.join("/");
-  if (req.method === "POST" && req.headers.get("origin") !== req.nextUrl.origin)
-    return NextResponse.json(
-      { message: "Invalid request origin" },
-      { status: 403 },
-    );
+  if (req.method === "POST") {
+    const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+    const protocol =
+      req.headers.get("x-forwarded-proto") ?? req.nextUrl.protocol.replace(":", "");
+    const expectedOrigin = host ? `${protocol}://${host}` : req.nextUrl.origin;
+    if (req.headers.get("origin") !== expectedOrigin)
+      return NextResponse.json(
+        { message: "Invalid request origin" },
+        { status: 403 },
+      );
+  }
   if (path === "logout" && req.method === "POST") {
     const res = NextResponse.json({ ok: true });
     res.cookies.delete(cookie);

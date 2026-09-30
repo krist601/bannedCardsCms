@@ -1,3 +1,6 @@
+import {getStorefrontSettings,saveStorefrontSettings} from "../../../lib/storefront-settings";
+import { sealedFinder } from "../../../lib/cms-sealed-finder";
+import { getSealed, postSealed } from "../../../lib/cms-sealed";
 import { visibleFilterSets } from "../../../lib/cms-visible-sets";
 import {
   compareCardsBySet,
@@ -49,6 +52,8 @@ export async function GET(
     return;
   }
   const config = { take: 30, skip, order: { created_at: "DESC" as const } };
+  if (resource === "storefront_settings") return getStorefrontSettings(req,res);
+  if (resource === "sealed") return getSealed(req, res);
   if (resource === "me") {
     const user = await req.scope
       .resolve(Modules.USER)
@@ -260,6 +265,7 @@ export async function POST(
   req: AuthenticatedMedusaRequest<Record<string, unknown>>,
   res: MedusaResponse,
 ) {
+  if (req.body?.action === "storefront_settings") return saveStorefrontSettings(req,res,req.body);
   return handleAction(req, res, req.body);
 }
 
@@ -273,6 +279,10 @@ async function handleAction(
     return;
   }
   const catalog: Catalog = req.scope.resolve("tcgCatalog");
+  if (["sealed_find", "sealed_accept", "sealed_graphics", "sealed_banner"].includes(String(body.action)))
+    return sealedFinder(req, res, body);
+  if (String(body.action).startsWith("sealed_"))
+    return postSealed(req, res, body);
   if (
     body.action === "stock_import_preview" ||
     body.action === "stock_import"

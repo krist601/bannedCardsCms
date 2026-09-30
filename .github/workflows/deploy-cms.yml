@@ -26,7 +26,7 @@ jobs:
       - name: Package CMS source
         run: |
           tar --exclude=.git --exclude=node_modules --exclude=.next --exclude='*.log' \
-            -czf cms.tar.gz .
+            -czf "$RUNNER_TEMP/cms.tar.gz" .
 
       - name: Configure SSH
         env:
@@ -44,7 +44,7 @@ jobs:
           LIGHTSAIL_HOST: ${{ secrets.LIGHTSAIL_HOST }}
           LIGHTSAIL_USER: ${{ secrets.LIGHTSAIL_USER }}
         run: |
-          scp -i ~/.ssh/lightsail_deploy cms.tar.gz "$LIGHTSAIL_USER@$LIGHTSAIL_HOST:/tmp/banned-cards-cms.tar.gz"
+          scp -i ~/.ssh/lightsail_deploy "$RUNNER_TEMP/cms.tar.gz" "$LIGHTSAIL_USER@$LIGHTSAIL_HOST:/tmp/banned-cards-cms.tar.gz"
 
       - name: Build and restart CMS
         env:

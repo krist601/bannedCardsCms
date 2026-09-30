@@ -165,6 +165,17 @@ function key() {
     throw new Error("Server signing key is not configured");
   return process.env.JWT_SECRET;
 }
+function wpnSourceSlug(code: string, name: string) {
+  const aliases: Record<string, string> = {
+    tla: "magic-the-gathering-avatar-the-last-airbender",
+  };
+  return aliases[code] || name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
 export function signPreview(preview: Preview) {
   const data = Buffer.from(JSON.stringify(preview)).toString("base64url");
   return (
@@ -293,12 +304,7 @@ export async function sealedFinder(req: any, res: any, body: any) {
         throw new Error(
           "Set code not in the set directory. Import/sync the set first.",
         );
-      const slug = String(set.name)
-        .normalize("NFKD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "");
+      const slug = wpnSourceSlug(code, String(set.name));
       const source = body.source
         ? String(body.source)
         : `https://wpn.wizards.com/en/products/${slug}`;

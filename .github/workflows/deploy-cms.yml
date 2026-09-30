@@ -1,4 +1,4 @@
-name: Deploy CMS to ECS
+name: Deploy CMS to Lightsail
 
 on:
   push:
@@ -11,62 +11,45 @@ concurrency:
 
 permissions:
   contents: read
-  id-token: write
 
 env:
-  AWS_REGION: us-east-2
-  ECR_REPOSITORY: banned-cards-cms
-  ECS_CLUSTER: banned-cards
-  ECS_SERVICE: banned-cards-cms
-  ECS_TASK_DEFINITION: banned-cards-cms
-  CONTAINER_NAME: cms
+  DEPLOY_PATH: /opt/banned-cards
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out CMS
+        uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v5
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+      - name: Package CMS source
+        run: |
+          tar --exclude=.git --exclude=node_modules --exclude=.next --exclude='*.log' \
+            -czf cms.tar.gz .
 
-      - name: Sign in to Amazon ECR
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build and push image
-        id: image
+      - name: Configure SSH
         env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+          SSH_PRIVATE_KEY: ${{ secrets.LIGHTSAIL_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.LIGHTSAIL_KNOWN_HOSTS }}
         run: |
-          IMAGE="$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-          docker build --tag "$IMAGE" .
-          docker push "$IMAGE"
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/lightsail_deploy
+          chmod 600 ~/.ssh/lightsail_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
 
-      - name: Download current task definition
+      - name: Upload CMS source
+        env:
+          LIGHTSAIL_HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          LIGHTSAIL_USER: ${{ secrets.LIGHTSAIL_USER }}
         run: |
-          aws ecs describe-task-definition \
-            --task-definition "$ECS_TASK_DEFINITION" \
-            --query taskDefinition > task-definition.json
+          scp -i ~/.ssh/lightsail_deploy cms.tar.gz "$LIGHTSAIL_USER@$LIGHTSAIL_HOST:/tmp/banned-cards-cms.tar.gz"
 
-      - name: Insert the new image into the task definition
-        id: task-definition
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: task-definition.json
-          container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ steps.image.outputs.image }}
-
-      - name: Deploy the task definition
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
-        with:
-          task-definition: ${{ steps.task-definition.outputs.task-definition }}
-          service: ${{ env.ECS_SERVICE }}
-          cluster: ${{ env.ECS_CLUSTER }}
-          wait-for-service-stability: true
+      - name: Build and restart CMS
+        env:
+          LIGHTSAIL_HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          LIGHTSAIL_USER: ${{ secrets.LIGHTSAIL_USER }}
+        run: |
+          ssh -i ~/.ssh/lightsail_deploy "$LIGHTSAIL_USER@$LIGHTSAIL_HOST" \
+            'set -e; mkdir -p /opt/banned-cards/cms; tar -xzf /tmp/banned-cards-cms.tar.gz -C /opt/banned-cards/cms; rm -f /tmp/banned-cards-cms.tar.gz; cd /opt/banned-cards; docker compose up -d --build cms caddy; docker compose ps cms caddy'

@@ -86,12 +86,16 @@ export default function SealedFinder({
     setAssets([]);
     setSubmitted(false);
     try {
+      const officialSource = source ||
+        (code.trim().toLowerCase() === "tla"
+          ? "https://wpn.wizards.com/en/products/magic-the-gathering-avatar-the-last-airbender"
+          : undefined);
       setPreview(
         await request("data", {
           action: "sealed_find",
           game: "magic-the-gathering",
           code,
-          source: source || undefined,
+          source: officialSource,
         }),
       );
     } catch (e) {

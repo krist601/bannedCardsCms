@@ -52,4 +52,4 @@ jobs:
           LIGHTSAIL_USER: ${{ secrets.LIGHTSAIL_USER }}
         run: |
           ssh -i ~/.ssh/lightsail_deploy "$LIGHTSAIL_USER@$LIGHTSAIL_HOST" \
-            'set -e; mkdir -p /opt/banned-cards/cms; tar -xzf /tmp/banned-cards-cms.tar.gz -C /opt/banned-cards/cms; rm -f /tmp/banned-cards-cms.tar.gz; cd /opt/banned-cards; docker compose up -d --build cms caddy; docker compose ps cms caddy'
+            'set -e; mkdir -p /opt/banned-cards/cms; tar -xzf /tmp/banned-cards-cms.tar.gz -C /opt/banned-cards/cms; rm -f /tmp/banned-cards-cms.tar.gz; cd /opt/banned-cards; docker compose up -d --no-deps --build cms; docker compose up -d --no-deps caddy; docker compose ps cms caddy'

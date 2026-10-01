@@ -57,9 +57,11 @@ const blank: Form = {
 export default function SealedProducts({
   request,
   locations,
+  defaultWarehouse,
 }: {
   request: (path: string, body?: unknown) => Promise<any>;
   locations: { id: string; name?: string }[];
+  defaultWarehouse: string;
 }) {
   const [finder, setFinder] = useState(false);
   const [rows, setRows] = useState<Product[]>([]),
@@ -84,7 +86,8 @@ export default function SealedProducts({
     else dialog.current?.close();
   }, [editing]);
   const active = useRef(false);
-  const location = warehouse || locations[0]?.id || "";
+  const location = warehouse || defaultWarehouse || locations[0]?.id || "";
+  useEffect(()=>setWarehouse(""),[defaultWarehouse]);
   useEffect(() => {
     let current = true;
     setLoading(true);

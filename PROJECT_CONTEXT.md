@@ -1,6 +1,6 @@
 # Project context
 
-- AWS workflow: `.github/workflows/deploy-cms.yml` mirrors sibling frontend/backend ECS pipelines (main/manual, production AWS_ROLE_ARN OIDC, us-east-2, banned-cards cluster, banned-cards-cms ECR/service/task family, cms container). Requires preprovisioned resources and runtime MEDUSA_BACKEND_URL; see README. Adding workflow locally does not activate deployment until pushed.
+- AWS deployment: main/manual GitHub Actions deploys via SSH to Lightsail, Docker Compose at /opt/banned-cards. CMS cms.bannedcards.cl, backend api.bannedcards.cl. Deploy backend changes through its separate repository before CMS dependents.
 
 ## Locations and runtime
 - CMS: this directory, Next.js 15 / React 19, port 3001, `pnpm dev`.
@@ -20,7 +20,7 @@
 - Each new stock listing creates a Medusa product with an explicit unique handle. Never let name-derived handles collide between NM/LP/languages/finishes.
 - New unpriced stock is DRAFT with price_pending=true; storefront projection hides its sellability. Inline positive CLP price publishes it.
 - Stock subtraction checks warehouse availability/reservations; adjustments use inventory-item locks and refresh legacy listing quantity snapshot.
-- No hardcoded login credentials. CMS requires a Medusa user with metadata.isAdmin === true, checked every request.
+- No hardcoded login credentials. CMS administrators use metadata.isAdmin === true. Staff use metadata.cmsAccess {enabled, sections, warehouseIds}; fresh permissions are checked every request, with native /admin endpoints blocked for staff.
 
 ## UX decisions
 - No importers in sidebar.
@@ -88,4 +88,9 @@
 
 - Storefront sections navigation uses `storefront-sections.tsx` and CMS resource/action `storefront_settings`. Strict boolean settings persist in Medusa store metadata.storefront_sections, retaining unrelated metadata. Public GET /store/storefront-settings exposes flags only. Master sealed flag hides nav/Home content and guards sealed routes/API; individual controls manage Home banner/rows, sealed landing sections, and bottom service cards. Defaults enabled. Mirrors under server-module stay synchronized.
 - Rebuilt/restarted using shared launcher; live public settings API returns HTTP 200 and 13 flags. CMS route regression covers read/save/read and invalid payloads; 63 tests pass. Settings UI validates response before rendering. Dev output uses .next-dev separately from production .next to avoid build corruption; production build passes.
-- Deployment audit: GitHub currently has no workflows in CMS/backend/frontend remotes; CMS repository has no Actions secrets or production environment. Local ../deployment describes Lightsail, while workflow templates target ECS. Confirm actual hosting/access before activating deployment; do not claim AWS upload succeeded without live verification.
+- Deployment verified September 30: GitHub main pipelines deploy CMS/backend to Lightsail, not ECS. Existing SSH access works; never print keys or runtime secrets.
+
+## Staff access and warehouse defaults
+- Users & access is administrator-only; creates staff logins and changes enabled status, sections, and warehouse assignments. lib/cms-permissions.ts handles policy and warehouse response filtering; lib/cms-users.ts manages accounts. Existing admins retain unrestricted access.
+- Default warehouse above cards/inventory/sealed supplies stock panels and imports; top-level changes reset panel overrides. Warehouse list contains only assigned IDs for staff.
+- scripts/configure-cms-member.ts provisions from JSON stdin without logging passwords; existing users have permissions updated without resetting passwords. Optional createMissingWarehouses is for local setup only.

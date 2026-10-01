@@ -1532,6 +1532,8 @@ dd {
 .set-heading small { margin-left: 10px; font-weight: normal; }
 .catalogue-table .set-heading th:last-child { display: table-cell; grid-column: 1 / -1; padding: 14px; }
 
+.cms-users label:has(input[type=checkbox]) { display:flex; flex-direction:row; align-items:center; gap:10px; }
+.cms-users input[type=checkbox] { width:18px; height:18px; accent-color:var(--purple, #7047eb); }
 .sealed-form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; }
 .sealed-actions {display:flex;align-items:center;gap:8px;min-height:36px;}
 .sealed-actions button {width:36px;height:36px;border:1px solid #d9d2f0;border-radius:8px;background:#f4f0ff;color:#7047eb;font-size:20px;}

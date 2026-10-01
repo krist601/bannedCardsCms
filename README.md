@@ -7,7 +7,11 @@ Next.js administration app for the sibling `bannedCards-server` Medusa project. 
 1. Run `../start-banned-cards.sh` to start the backend, storefront, CMS, and infrastructure together. The launcher reuses services that are already running and stops only the applications it started. CMS output is written to `../.banned-cards-logs/cms.log`.
 2. For standalone CMS development, run `pnpm install`, then `pnpm dev` in this directory with Medusa already running on port 9000.
 3. Open **http://localhost:3001** or the storefront's **Staff CMS** footer link.
-4. Sign in using a Medusa **user** email/password with `metadata.isAdmin === true`. Customer/store accounts do not have administrator access.
+4. Sign in using an assigned CMS account. Customer/store accounts do not have CMS access.
+
+Administrators can open **Users & access** to create staff logins, enable/disable their access, and select their sections and warehouses. Permissions are checked on every backend request; staff cannot bypass them through Medusa admin endpoints. Administrators retain full access. Staff permissions are stored in user metadata `cmsAccess` (`enabled`, `sections`, `warehouseIds`).
+
+The **Default warehouse** selector above Card catalog, Inventory, and Sealed products supplies the warehouse for new stock and card imports. Individual stock panels can override it; changing the top selector resets those overrides.
 
 The app reads `MEDUSA_BACKEND_URL`, defaulting to `http://localhost:9000`. Copy `.env.example` to `.env.local` to change it. Requests are proxied server-side, so the browser needs no Medusa API key or additional Medusa CORS origins.
 
@@ -19,7 +23,7 @@ In `../bannedCards-server`, for an existing Medusa user:
 pnpm exec medusa exec ./src/scripts/set-cms-admin.ts your-email@example.com true
 ```
 
-Use `false` to revoke access. This merges the existing user metadata and preserves other fields. Revocation is checked on every CMS request. New users have no CMS access by default; they must be created through trusted Medusa administration and explicitly granted the flag. Public registration must never accept an effective `isAdmin` flag.
+Use `false` to remove administrator privileges. Staff access is managed separately in **Users & access**. New public registrations have no CMS access; public registration must never accept effective `isAdmin` or `cmsAccess` metadata.
 
 If no Medusa user exists, create one with Medusa's user CLI (`pnpm exec medusa user --help`), then run the grant command above. This project does not add a shared/default password.
 
@@ -91,13 +95,8 @@ Rows support Draft/Published dropdowns, inline CLP pricing and local +/- stock u
 
 ## AWS deployment pipeline
 
-`.github/workflows/deploy-cms.yml` follows the storefront/backend pipelines: pushes to `main` (or a manual GitHub Actions run) build a Docker image tagged with the commit SHA, push it to ECR, and deploy a new ECS task revision while waiting for service stability.
+`.github/workflows/deploy-cms.yml` deploys pushes to `main` (or manual runs) to the existing Lightsail host. It uploads source over SSH and rebuilds the CMS with Docker Compose in `/opt/banned-cards`.
 
-Before the first run, configure these existing AWS/GitHub resources:
+The GitHub `production` environment uses `LIGHTSAIL_HOST`, `LIGHTSAIL_USER`, `LIGHTSAIL_SSH_PRIVATE_KEY`, and `LIGHTSAIL_KNOWN_HOSTS`. Runtime `MEDUSA_BACKEND_URL` points to `http://backend:9000` inside Compose. The public CMS is https://cms.bannedcards.cl.
 
-- GitHub environment `production` with secret `AWS_ROLE_ARN`. The role's GitHub OIDC trust must allow `repo:krist601/bannedCardsCms:environment:production` and the `sts.amazonaws.com` audience.
-- The role needs ECR push, ECS task-definition read/register and service deployment permissions, plus permission to pass the task's execution/task roles, following the backend/frontend deployment roles.
-- Region `us-east-2`, ECR repository `banned-cards-cms`, ECS cluster `banned-cards`, service and task-definition family `banned-cards-cms`, container name `cms`. Adjust workflow values if the provisioned names differ.
-- The ECS container listens on port `3001`. Set its runtime `MEDUSA_BACKEND_URL` to the deployed backend URL reachable from ECS; the Docker default `http://backend:9000` is only suitable if that hostname resolves in your deployment. Serve the CMS through HTTPS.
-
-The workflow preserves the current task definition's environment, secrets and infrastructure settings. It deploys the CMS only; changes under `server-module` must also be installed and deployed through the backend repository. AWS infrastructure is not created by this workflow.
+Server-module changes must also be synchronized and deployed through the backend repository before enabling features that depend on them. Credentials and runtime environment files are never committed.

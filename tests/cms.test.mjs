@@ -17,6 +17,7 @@ function load(file, dependencies = {}) {
   return exports;
 }
 const access = load("server-module/src/lib/cms-access.ts");
+const permissions = load("server-module/src/lib/cms-permissions.ts");
 test("CMS access requires a literal true flag on the stored user", () => {
   for (const user of [
     null,
@@ -35,14 +36,38 @@ test("stock input rejects zero, negative, fractional, string and unsafe values",
     assert.throws(() => access.positiveInteger(value, "Quantity"));
   assert.equal(access.positiveInteger(12, "Quantity"), 12);
 });
-const middleware = load("server-module/src/api/middlewares.ts", {
+const middlewareRoutes = load("server-module/src/api/middlewares.ts", {
   "@medusajs/framework/http": {
     defineMiddlewares: (x) => x,
     authenticate: () => () => {},
   },
   "@medusajs/framework/utils": { Modules: { USER: "user" } },
   "../lib/cms-access": access,
-}).default.routes[0].middlewares[1];
+  "../lib/cms-permissions": permissions,
+}).default.routes;
+const middleware = middlewareRoutes[0].middlewares[1];
+test("CMS members cannot bypass permissions with native admin endpoints", async () => {
+  const guard = middlewareRoutes[1].middlewares[1];
+  const user = {metadata:{cmsAccess:{enabled:true,sections:['cards'],warehouseIds:['shared']}}};
+  for (const path of ['/admin/users','/admin/stock-locations','/admin/cms/unknown']) {
+    const res = response(); let next = false;
+    await guard({path,auth_context:{actor_id:'member'},scope:{resolve:()=>({retrieveUser:async()=>user})}},res,()=>next=true);
+    assert.equal(res.code,403); assert.equal(next,false);
+  }
+  const res = response(); let next = false;
+  await guard({path:'/',originalUrl:'/admin/cms?resource=cards',auth_context:{actor_id:'member'},scope:{resolve:()=>({retrieveUser:async()=>user})}},res,()=>next=true);
+  assert.equal(next,true);
+});
+test("member response scopes locations and inventory using fresh stored permissions", async () => {
+  const user={metadata:{cmsAccess:{enabled:true,sections:['cards'],warehouseIds:['shared']}}};
+  const req={method:'GET',query:{resource:'locations'},auth_context:{actor_id:'member'},scope:{resolve:()=>({retrieveUser:async()=>user})}};
+  const res=response(); await middleware(req,res,()=>{});
+  res.json({rows:[{id:'shared'},{id:'private'}]});
+  assert.deepEqual(res.body.rows,[{id:'shared'}]);
+  user.metadata.cmsAccess.enabled=false;
+  const revoked=response(); await middleware(req,revoked,()=>assert.fail('revoked access'));
+  assert.equal(revoked.code,403);
+});
 function response() {
   return {
     code: 200,
@@ -62,6 +87,7 @@ test("API permission is re-read, including after admin access is revoked", async
     calls = 0;
   const res = response();
   const req = {
+    method: "GET", query: {resource:"me"},
     auth_context: { actor_id: "user_1" },
     scope: {
       resolve: () => ({
@@ -114,6 +140,7 @@ test("storefront settings route loads, saves and reads visibility without losing
   }
 });
 const routes = load("server-module/src/api/admin/cms/route.ts", {
+  "../../../lib/cms-users": {cmsUsers:()=>{}},
   "../../../lib/storefront-settings": settingsHandlers,
   "../../../lib/cms-set-groups": setGroups,
   "../../../lib/cms-catalog-sort": catalogSort,

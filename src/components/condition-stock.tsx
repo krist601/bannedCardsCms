@@ -22,6 +22,7 @@ type Listing = {
   }[];
 };
 type Props = {
+  defaultWarehouse: string;
   printing: { id: string; name?: string };
   locations: { id: string; name?: string }[];
   revision: number;
@@ -54,6 +55,7 @@ export default function ConditionStock({
   locations,
   revision,
   notify,
+  defaultWarehouse,
 }: Props) {
   const [open, setOpen] = useState(false),
     [warehouse, setWarehouse] = useState("");
@@ -67,7 +69,8 @@ export default function ConditionStock({
     [refresh, setRefresh] = useState(0);
   const inFlight = useRef(false);
   const locationId =
-    warehouse || (locations.length === 1 ? locations[0].id : "");
+    warehouse || defaultWarehouse || locations[0]?.id || "";
+  useEffect(()=>setWarehouse(""),[defaultWarehouse]);
   const selectedLanguage =
     language === "Other" ? otherLanguage.trim() : language;
   useEffect(() => {

@@ -1,5 +1,6 @@
 "use client";
 import StorefrontSections from "./storefront-sections";
+import CmsUsers from "./cms-users";
 import SealedProducts from "./sealed-products";
 import CardImport from "./card-import";
 import ConditionStock from "./condition-stock";
@@ -61,6 +62,7 @@ type Row = {
   };
 };
 type Page =
+  | "users"
   | "storefront"
   | "overview"
   | "cards"
@@ -72,6 +74,7 @@ type Page =
   | "card_import"
   | "settings";
 const navigation: { id: Page; label: string; icon: string }[] = [
+  { id: "users", label: "Users & access", icon: "♙" },
   { id: "storefront", label: "Storefront sections", icon: "◧" },
   { id: "overview", label: "Overview", icon: "◫" },
   { id: "cards", label: "Card catalog", icon: "▤" },
@@ -114,6 +117,13 @@ async function api(resource: string, body?: unknown) {
 export default function Cms() {
   const [session, setSession] = useState<"loading" | "out" | "in">("loading");
   const [email, setEmail] = useState("");
+  const [permissions, setPermissions] = useState<{admin:boolean;sections:string[]}>({admin:false,sections:[]});
+  const applyUser = (user: any) => {
+    setEmail(user.email);
+    const p = {admin:user.admin === true || user.isAdmin === true,sections:user.sections || []};
+    setPermissions(p);
+    setPage(p.admin ? "overview" : (p.sections[0] as Page || "settings"));
+  };
   const [page, setPage] = useState<Page>("overview");
   const [rows, setRows] = useState<Row[]>([]),
     [count, setCount] = useState(0),
@@ -151,12 +161,12 @@ export default function Cms() {
   const fail = useCallback((e: unknown) => {
     const err = e as Error & { status?: number };
     setError(err.message);
-    if (err.status === 401 || err.status === 403) setSession("out");
+    if (err.status === 401) setSession("out");
   }, []);
   useEffect(() => {
     api("data?resource=me")
       .then((d) => {
-        setEmail(d.user.email);
+        applyUser(d.user);
         setSession("in");
       })
       .catch(() => setSession("out"));
@@ -164,7 +174,7 @@ export default function Cms() {
   useEffect(() => {
     if (session !== "in") return;
     api("data?resource=locations")
-      .then((d) => setLocations(d.rows))
+      .then((d) => {setLocations(d.rows);setWarehouse(v=>d.rows.some((l:Row)=>l.id===v)?v:d.rows[0]?.id||"");})
       .catch(fail);
   }, [session, fail]);
   useEffect(() => {
@@ -190,6 +200,7 @@ export default function Cms() {
       page === "import" ||
       page === "card_import" ||
       page === "storefront" ||
+      page === "users" ||
       page === "sealed" ||
       page === "settings"
     )
@@ -262,6 +273,8 @@ export default function Cms() {
     };
   }, [modal, busy]);
   function go(p: Page) {
+    const section = p === "card_import" ? "cards" : p === "import" ? "sets" : p;
+    if (section !== "settings" && !permissions.admin && !permissions.sections.includes(section)) return;
     setSetFilter("");
     setPrintingFilter(null);
     setPage(p);
@@ -307,7 +320,7 @@ export default function Cms() {
         email: f.get("email"),
         password: f.get("password"),
       });
-      setEmail(d.user.email);
+      applyUser(d.user);
       setSession("in");
     } catch (e) {
       fail(e);
@@ -473,8 +486,7 @@ export default function Cms() {
               </button>
             </form>
             <p className="access-note">
-              Access is restricted to accounts with <code>isAdmin</code>{" "}
-              enabled. Contact your server administrator for access.
+              Access is restricted to assigned CMS accounts. Contact your administrator for access.
             </p>
           </div>
         </section>
@@ -508,7 +520,7 @@ export default function Cms() {
         </div>
         <span className="nav-label">WORKSPACE</span>
         <nav>
-          {navigation.map((n) => (
+          {navigation.filter(n=>permissions.admin||permissions.sections.includes(n.id)).map((n) => (
             <button
               key={n.id}
               className={page === n.id ? "active" : ""}
@@ -532,7 +544,7 @@ export default function Cms() {
           <div className="profile">
             <span className="avatar">{email.slice(0, 2).toUpperCase()}</span>
             <div>
-              <b>Administrator</b>
+              <b>{permissions.admin ? "Administrator" : "Team member"}</b>
               <small title={email}>{email}</small>
             </div>
             <button
@@ -574,6 +586,7 @@ export default function Cms() {
                 {
                   {
                     storefront: "Choose which sections customers can see.",
+                    users: "Manage user access to sections and warehouses.",
                     overview:
                       "A clear view of what’s in store and what’s next.",
                     cards: "Every printing, ready for its next collector.",
@@ -611,6 +624,8 @@ export default function Cms() {
             </div>
           )}
           {page === "storefront" && <StorefrontSections/>}
+          {page === "users" && permissions.admin && <CmsUsers request={api} locations={locations}/>}
+          {["cards","stock","card_import","sealed"].includes(page) && <label className="table-toolbar">Default warehouse<select aria-label="Default warehouse" value={warehouse} onChange={e=>setWarehouse(e.target.value)}>{locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>}
           {page === "overview" && (
             <>
               <div className="stats">
@@ -733,10 +748,10 @@ export default function Cms() {
             </button>
           )}
           {page === "sealed" && (
-            <SealedProducts request={api} locations={locations} />
+            <SealedProducts request={api} locations={locations} defaultWarehouse={warehouse} />
           )}
           {page === "card_import" && (
-            <CardImport locations={locations} request={api} />
+            <CardImport locations={locations} request={api} defaultWarehouse={warehouse} />
           )}
           {page === "import" && (
             <div className="import-grid">
@@ -1041,6 +1056,7 @@ export default function Cms() {
                                   <ConditionStock
                                     printing={r}
                                     locations={locations}
+                                    defaultWarehouse={warehouse}
                                     revision={revision}
                                     notify={setNotice}
                                   />
@@ -1196,7 +1212,7 @@ export default function Cms() {
                                     className="text-button"
                                     onClick={() => {
                                       setSelected(r);
-                                      setWarehouse("");
+                                      setWarehouse(v=>v || locations[0]?.id || "");
                                       setModal("receive");
                                       setError("");
                                     }}
@@ -1213,7 +1229,7 @@ export default function Cms() {
                                     }
                                     onClick={() => {
                                       setSelected(r);
-                                      setWarehouse("");
+                                      setWarehouse(v=>v || locations[0]?.id || "");
                                       setModal("subtract");
                                       setError("");
                                     }}
@@ -1327,7 +1343,7 @@ export default function Cms() {
                 <dd>{email}</dd>
                 <dt>Permission</dt>
                 <dd>
-                  <span className="pill">isAdmin: true</span>
+                  <span className="pill">{permissions.admin ? "Administrator" : "Assigned sections and warehouses"}</span>
                 </dd>
                 <dt>Currency</dt>
                 <dd>Chilean peso · CLP</dd>

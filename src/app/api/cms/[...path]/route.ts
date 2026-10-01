@@ -55,7 +55,7 @@ async function handle(
       });
       if (!check.ok)
         return NextResponse.json(
-          { message: "This account does not have CMS administrator access." },
+          { message: "This account does not have CMS access." },
           { status: 403 },
         );
       const res = NextResponse.json(await check.json());
@@ -89,7 +89,7 @@ async function handle(
       .json()
       .catch(() => ({ message: "Server returned an invalid response" }));
     const res = NextResponse.json(data, { status: response.status });
-    if (response.status === 401 || response.status === 403)
+    if (response.status === 401)
       res.cookies.delete(cookie);
     return res;
   } catch {

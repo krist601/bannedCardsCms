@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 type Row = {
   line: number;
   quantity: number;
@@ -16,13 +16,16 @@ type Row = {
 export default function CardImport({
   locations,
   request,
+  defaultWarehouse,
 }: {
   locations: { id: string; name?: string }[];
+  defaultWarehouse: string;
   request: (resource: string, body?: unknown) => Promise<any>;
 }) {
   const [text, setText] = useState("");
   const [condition, setCondition] = useState("near_mint");
-  const [location, setLocation] = useState(locations[0]?.id || "");
+  const [location, setLocation] = useState(defaultWarehouse || locations[0]?.id || "");
+  useEffect(()=>{setLocation(defaultWarehouse);setValid(false);setRows([]);},[defaultWarehouse]);
   const [rows, setRows] = useState<Row[]>([]);
   const [valid, setValid] = useState(false);
   const [busy, setBusy] = useState(false);

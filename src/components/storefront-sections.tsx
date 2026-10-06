@@ -89,7 +89,7 @@ export default function StorefrontSections() {
     }
   }
   return (
-    <section className="panel import-form">
+    <section className="panel import-form storefront-settings">
       <h2>Storefront sections</h2>
       <p>
         Changes apply after saving. Return to the storefront tab or refresh it
@@ -104,11 +104,19 @@ export default function StorefrontSections() {
       {!settings && !error && <p>Loading settings…</p>}
       {settings && (
         <>
-          <div style={{ display: "grid", gap: 16, margin: "24px 0" }}>
-            {sections.map(([key, label, help]) => (
+          <div className="visibility-groups">
+            {[
+              { title: "Sealed products access", keys: ["sealed"] },
+              { title: "Home page", keys: ["homeBanner", "homeSealed", "homeSingles"] },
+              { title: "Sealed catalog", keys: ["sealedBanner", "sealedCategories", "sealedLatest", "sealedAlmostGone", "sealedDeals", "sealedNew"] },
+              { title: "More storefront sections", keys: ["buyCards", "bulkFinder", "family"] },
+            ].map(group => <fieldset key={group.title} className="visibility-group">
+              <legend>{group.title}</legend>
+              {group.title === "Sealed catalog" && !settings.sealed && <p className="muted">Hidden while sealed products access is off. Your selections are preserved.</p>}
+              {sections.filter(([key]) => group.keys.includes(key)).map(([key, label, help]) => (
               <label
                 key={key}
-                style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
+                className="visibility-option"
               >
                 <input
                   type="checkbox"
@@ -121,10 +129,11 @@ export default function StorefrontSections() {
                 />
                 <span>
                   <strong>{label}</strong>
-                  <small style={{ display: "block" }}>{help}</small>
+                  <small>{help}</small>
                 </span>
               </label>
             ))}
+            </fieldset>)}
           </div>
           <button
             className="primary"

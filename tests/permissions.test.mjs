@@ -4,6 +4,16 @@ import fs from 'node:fs';
 import ts from 'typescript';
 const api={};new Function('exports',ts.transpileModule(fs.readFileSync('server-module/src/lib/cms-permissions.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText)(api);
 const member={metadata:{cmsAccess:{enabled:true,sections:['cards','stock'],warehouseIds:['shared','samuel']}}};
+test('sealed creation requires explicit permission and section access, including bulk acceptance',()=>{
+  const user=(permission,sections=['sealed'])=>({metadata:{cmsAccess:{enabled:true,sections,canCreateSealed:permission,warehouseIds:[]}}});
+  for(const action of ['sealed_create','sealed_accept']) {
+    for(const value of [undefined,false,'true']) assert.equal(api.canAccessCms(user(value),'POST',action),false);
+    assert.equal(api.canAccessCms(user(true),'POST',action),true);
+    assert.equal(api.canAccessCms(user(true,[]),'POST',action),false);
+    assert.equal(api.canAccessCms({metadata:{isAdmin:true}},'POST',action),true);
+  }
+  for(const action of ['sealed_save','sealed_stock','sealed_price']) assert.equal(api.canAccessCms(user(false),'POST',action),true);
+});
 test('members are denied unassigned sections, administration, unknown actions and warehouses',()=>{
   assert.equal(api.canAccessCms(member,'GET','cards'),true);
   for(const key of ['users','orders','overview','sealed','unknown'])assert.equal(api.canAccessCms(member,'GET',key),false);

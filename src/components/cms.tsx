@@ -1,6 +1,11 @@
 "use client";
 import StorefrontSections from "./storefront-sections";
 import CmsUsers from "./cms-users";
+import SetPrices from "./set-prices";
+import NavigationIcon from "./navigation-icon";
+import StoresWarehouses from "./stores-warehouses";
+import PricingSettings from "./pricing-settings";
+import DatabaseBackups from "./database-backups";
 import SealedProducts from "./sealed-products";
 import CardImport from "./card-import";
 import ConditionStock from "./condition-stock";
@@ -63,6 +68,9 @@ type Row = {
 };
 type Page =
   | "users"
+  | "stores"
+  | "pricing"
+  | "backups"
   | "storefront"
   | "overview"
   | "cards"
@@ -73,15 +81,18 @@ type Page =
   | "import"
   | "card_import"
   | "settings";
-const navigation: { id: Page; label: string; icon: string }[] = [
-  { id: "users", label: "Users & access", icon: "♙" },
-  { id: "storefront", label: "Storefront sections", icon: "◧" },
-  { id: "overview", label: "Overview", icon: "◫" },
-  { id: "cards", label: "Card catalog", icon: "▤" },
-  { id: "sets", label: "Sets", icon: "◈" },
-  { id: "stock", label: "Inventory", icon: "▦" },
-  { id: "sealed", label: "Sealed products", icon: "▣" },
-  { id: "orders", label: "Orders", icon: "▣" },
+const navigation: { id: Page; label: string; icon: string; group: string }[] = [
+  { id: "overview", label: "Overview", icon: "◫", group: "Stock" },
+  { id: "cards", label: "Card catalog", icon: "▤", group: "Stock" },
+  { id: "stock", label: "Inventory", icon: "▦", group: "Stock" },
+  { id: "sealed", label: "Sealed products", icon: "▣", group: "Stock" },
+  { id: "orders", label: "Orders", icon: "▣", group: "Stock" },
+  { id: "users", label: "Users & access", icon: "♙", group: "Administration" },
+  { id: "stores", label: "Stores & warehouses", icon: "▣", group: "Administration" },
+  { id: "pricing", label: "Pricing settings", icon: "", group: "Administration" },
+  { id: "backups", label: "Database backups", icon: "", group: "Administration" },
+  { id: "storefront", label: "Storefront sections", icon: "◧", group: "Administration" },
+  { id: "sets", label: "Sets", icon: "◈", group: "Administration" },
 ];
 const money = (n = 0, currency = "CLP") =>
   new Intl.NumberFormat("es-CL", {
@@ -117,7 +128,7 @@ async function api(resource: string, body?: unknown) {
 export default function Cms() {
   const [session, setSession] = useState<"loading" | "out" | "in">("loading");
   const [email, setEmail] = useState("");
-  const [permissions, setPermissions] = useState<{admin:boolean;sections:string[]}>({admin:false,sections:[]});
+  const [permissions, setPermissions] = useState<{admin:boolean;sections:string[];canCreateSealed?:boolean}>({admin:false,sections:[]});
   const applyUser = (user: any) => {
     setEmail(user.email);
     const p = {admin:user.admin === true || user.isAdmin === true,sections:user.sections || []};
@@ -135,6 +146,7 @@ export default function Cms() {
   const [setOptions, setSetOptions] = useState<Row[]>([]);
   const [printingFilter, setPrintingFilter] = useState<Row | null>(null);
   const [warehouse, setWarehouse] = useState("");
+  const [priceSet, setPriceSet] = useState<{id:string;name?:string}|null>(null);
   const [listingCondition, setListingCondition] = useState("near_mint");
   const [stats, setStats] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false),
@@ -201,6 +213,9 @@ export default function Cms() {
       page === "card_import" ||
       page === "storefront" ||
       page === "users" ||
+      page === "stores" ||
+      page === "pricing" ||
+      page === "backups" ||
       page === "sealed" ||
       page === "settings"
     )
@@ -210,7 +225,7 @@ export default function Cms() {
     setError("");
     setRows([]);
     api(
-      `data?resource=${page}&offset=${offset}&q=${encodeURIComponent(search)}&status=${orderStatus}&set_id=${encodeURIComponent(setFilter)}&printing_id=${encodeURIComponent(printingFilter?.id || "")}`,
+      `data?resource=${page}&location_id=${encodeURIComponent(page === "stock" ? warehouse : "")}&offset=${offset}&q=${encodeURIComponent(search)}&status=${orderStatus}&set_id=${encodeURIComponent(setFilter)}&printing_id=${encodeURIComponent(printingFilter?.id || "")}`,
     )
       .then((d) => {
         if (id !== requestId.current) return;
@@ -238,6 +253,7 @@ export default function Cms() {
     revision,
     printingFilter,
     setFilter,
+    warehouse,
     fail,
   ]);
   useEffect(() => {
@@ -518,18 +534,21 @@ export default function Cms() {
           </div>
           <span className="live-dot" />
         </div>
-        <span className="nav-label">WORKSPACE</span>
-        <nav>
-          {navigation.filter(n=>permissions.admin||permissions.sections.includes(n.id)).map((n) => (
-            <button
-              key={n.id}
-              className={page === n.id ? "active" : ""}
-              onClick={() => go(n.id)}
-            >
-              <span>{n.icon}</span>
-              {n.label}
-            </button>
-          ))}
+        <nav aria-label="Main navigation">
+          {["Stock", "Administration"].map(group => {
+            const items = navigation.filter(n => n.group === group && (permissions.admin || permissions.sections.includes(n.id)));
+            return items.length > 0 && <section className="nav-group" key={group} aria-label={group}>
+              <h2 className="nav-label">{group}</h2>
+              {items.map(n => <button
+                key={n.id}
+                className={page === n.id ? "active" : ""}
+                onClick={() => go(n.id)}
+              >
+                <span><NavigationIcon name={n.id}/></span>
+                {n.label}
+              </button>)}
+            </section>;
+          })}
         </nav>
         <div className="sidebar-bottom">
           <div className="tip">
@@ -587,6 +606,9 @@ export default function Cms() {
                   {
                     storefront: "Choose which sections customers can see.",
                     users: "Manage user access to sections and warehouses.",
+                    stores: "Choose the warehouses each storefront can sell from.",
+                    pricing: "Set card conversion rates and minimum prices.",
+                    backups: "Protect and restore your store data.",
                     overview:
                       "A clear view of what’s in store and what’s next.",
                     cards: "Every printing, ready for its next collector.",
@@ -624,8 +646,11 @@ export default function Cms() {
             </div>
           )}
           {page === "storefront" && <StorefrontSections/>}
+          {page === "pricing" && permissions.admin && <PricingSettings request={api}/>}
+          {page === "backups" && permissions.admin && <DatabaseBackups request={api}/>}
           {page === "users" && permissions.admin && <CmsUsers request={api} locations={locations}/>}
-          {["cards","stock","card_import","sealed"].includes(page) && <label className="table-toolbar">Default warehouse<select aria-label="Default warehouse" value={warehouse} onChange={e=>setWarehouse(e.target.value)}>{locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>}
+          {page === "stores" && permissions.admin && <StoresWarehouses request={api} onWarehousesChanged={()=>{api("data?resource=locations").then(d=>setLocations(d.rows)).catch(fail)}}/>}
+          {["cards","stock","card_import","sealed"].includes(page) && <label className="table-toolbar">{page === "stock" ? "Warehouse" : "Default warehouse"}<select aria-label="Default warehouse" value={warehouse} onChange={e=>{setWarehouse(e.target.value);if(page === "stock")setOffset(0)}}>{locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>}
           {page === "overview" && (
             <>
               <div className="stats">
@@ -748,7 +773,7 @@ export default function Cms() {
             </button>
           )}
           {page === "sealed" && (
-            <SealedProducts request={api} locations={locations} defaultWarehouse={warehouse} />
+            <SealedProducts request={api} locations={locations} defaultWarehouse={warehouse} canCreate={permissions.admin || permissions.canCreateSealed === true} />
           )}
           {page === "card_import" && (
             <CardImport locations={locations} request={api} defaultWarehouse={warehouse} />
@@ -763,7 +788,8 @@ export default function Cms() {
                 <p className="muted">
                   Enter up to 10 set codes. Each set imports all its card
                   printings. Existing printings are updated safely by Scryfall
-                  ID.
+                  ID. Base prices refresh using your pricing settings, rounded
+                  up to your configured increment. Custom prices are kept.
                 </p>
                 <form onSubmit={runImport}>
                   <label>
@@ -1121,6 +1147,7 @@ export default function Cms() {
                                           >
                                             Select for import
                                           </button>
+                                          <button className="text-button" onClick={()=>setPriceSet(division)}>Check prices</button>
                                         </li>
                                       ))}
                                     </ul>
@@ -1158,6 +1185,7 @@ export default function Cms() {
                                   >
                                     Select for import
                                   </button>
+                                  <button className="text-button" onClick={()=>setPriceSet(r)}>Check prices</button>
                                 </td>
                               </>
                             ) : page === "stock" ? (
@@ -1331,6 +1359,7 @@ export default function Cms() {
               </footer>
             </section>
           )}
+          {priceSet && <SetPrices set={priceSet} request={api} onClose={()=>setPriceSet(null)}/>}
           {page === "settings" && (
             <section className="panel settings">
               <h2>Workspace & access</h2>

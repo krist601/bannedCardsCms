@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { Modules } from "@medusajs/framework/utils";
 import { createProductsWorkflow } from "@medusajs/medusa/core-flows";
+import { productStoreChannels } from "./cms-stores";
 const hash = (s: string) =>
   createHash("sha256").update(s).digest("hex").slice(0, 24);
 export type FoundAsset = {
@@ -479,7 +480,7 @@ export async function sealedFinder(req: any, res: any, body: any) {
                     images,
                     category_ids: [root.id, category.id],
                     shipping_profile_id: profile.id,
-                    sales_channels: [{ id: channel.id }],
+                    sales_channels: await productStoreChannels(req.scope,channel.id),
                     metadata: {
                       banner_image: currentSet.metadata?.sealed_banner_url || "",
                       kind: "sealed",

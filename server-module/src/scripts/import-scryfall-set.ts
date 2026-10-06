@@ -1,4 +1,5 @@
 import syncCardImagesScript from "./sync-card-images";
+import { refreshSetBasePrices } from "../lib/cms-base-prices";
 import type { ExecArgs } from "@medusajs/framework/types";
 import {
   importScryfallSet,
@@ -78,6 +79,7 @@ export default async function importScryfallSetScript({
           name: set.name,
           released_at: set.released_at ? new Date(set.released_at) : null,
           metadata: {
+            isVisible: true,
             ...((existing?.metadata as Record<string, unknown>) ?? {}),
             scryfall_id: set.id,
             scryfall_data: set,
@@ -110,6 +112,8 @@ export default async function importScryfallSetScript({
   console.log(
     `Imported ${summary.setName} (${summary.setCode}): ${summary.discovered} cards, ${summary.created} created, ${summary.updated} updated`,
   );
+  const prices = await refreshSetBasePrices(container, summary.setCode);
+  console.log(`Base prices refreshed for ${prices.printings} printings; ${prices.updated} automatic listings updated, ${prices.custom} custom prices preserved.`);
   await syncCardImagesScript({
     container,
     args: [`set=${summary.setCode}`],

@@ -14,7 +14,7 @@ type Listing = {
   language: string;
   finish: string;
   price_clp: number;
-  metadata?: { price_pending?: boolean };
+  metadata?: { price_pending?: boolean; price_source?: string };
   levels: {
     location_id: string;
     available_quantity: number;
@@ -294,6 +294,7 @@ export default function ConditionStock({
                                 setRefresh((n) => n + 1);
                               }}
                             />
+                            <small>{listing.metadata?.price_pending ? "Price unavailable" : listing.metadata?.price_source === "scryfall" ? "Scryfall base price" : "Custom price"}</small>
                           </div>
                           <div className="stock-stepper">
                             <button

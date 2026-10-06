@@ -23,6 +23,21 @@
 - No hardcoded login credentials. CMS administrators use metadata.isAdmin === true. Staff use metadata.cmsAccess {enabled, sections, warehouseIds}; fresh permissions are checked every request, with native /admin endpoints blocked for staff.
 
 ## UX decisions
+
+- Database backups: admin-only sidebar section. Backend job checks every minute for a daily America/Santiago backup, catches up after downtime, encrypts custom-format PostgreSQL dumps into a separate private S3 bucket, and removes files at least 14 days old. Redis owns queue/locks/status and maintenance outside the restored DB. Restore requires typed confirmation, matching schema, archive validation, a safety backup and single-transaction pg_restore. Supports one shared-mode backend; see docs/database-backups.md for configuration/recovery. BACKUP_ENCRYPTION_KEY must be preserved separately. Local setup script uses the existing PostgreSQL container; production Dockerfile installs PostgreSQL 15 clients.
+
+- Staff sealed-product creation requires cmsAccess.canCreateSealed === true plus sealed section access; covers sealed_create and sealed_accept. Administrators retain access. Users & access edits the flag; default is denied for staff. Existing product editing and stock adjustments remain section-controlled.
+
+- Pricing rounding is configurable via card_pricing.rounding (default 50); positive integer increments supported. Automatic conversion applies minimum first, then rounds upward to a multiple. Preview cache includes rate/minimum/rounding; new imports persist the selected increment. Existing custom prices remain exempt from automatic rounding.
+
+- Pricing settings (admin-only): Medusa store metadata.card_pricing stores rate/minimum, defaults 750/300 confirmed by user. New automatic stock, set import refresh and price previews use these settings, rounded up to CLP50. Saving does not bulk-reprice existing listings; reimport sets for that. Existing custom prices remain intact; new custom prices must meet the minimum. cms-pricing-settings.ts handles validation/persistence.
+
+- Automatic singles pricing: cms-base-prices.ts refreshes printing attributes.base_prices_clp per finish from Scryfall during import-scryfall-set (USD ×750, ceil to CLP50). Listings tagged price_source=scryfall follow refreshed bases; manual edits tag custom, and legacy positive prices are preserved as custom. New listings use the saved base (fallback: stored scryfall_data prices). Missing prices stay pending/draft. Stock panels label base versus custom pricing. Refresh updates both listing.price_clp and Medusa variant pricing.
+
+- Sidebar groups: Stock (Overview, Card catalog, Inventory, Sealed products, Orders), Administration (Users & access, Stores & warehouses, Storefront sections, Sets); SVG icons in navigation-icon.tsx. Inventory sends selected `location_id`, filters positive available/reserved warehouse levels before pagination, and refreshes on warehouse changes.
+
+- Stores & warehouses: admin-only section; each store is a Medusa sales channel with `metadata.cms_store {domain,api_key_id}` and an individual publishable key. Warehouse links determine available stock; new warehouses are unassigned. Shared CLP prices remain unchanged. `configure-cms-stores.ts` bootstraps Banned Cards (preserving default-channel warehouses) and Distrito TCG (none assigned).
+- Storefront deployments must use their store-specific publishable key and permitted CORS origin. A saved domain does not configure DNS or deploy a frontend. Custom card stock reads live inventory for linked warehouses; cart middleware rejects cross-store carts. Stock receipts cannot relink excluded managed stores. Storefront saved carts are namespaced by public key.
 - No importers in sidebar.
 - Card catalog Import cards opens pasted stock-line import: quantity, name, set code, collector number, optional foil, language. Example: `2x The One Ring (LTR) 246 *F* S`.
 - Sets Import set opens Scryfall set/printing import, a separate operation from receiving stock.

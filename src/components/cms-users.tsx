@@ -24,6 +24,7 @@ type Member = {
   name: string;
   enabled: boolean;
   admin: boolean;
+  canCreateSealed?: boolean;
   sections: string[];
   warehouseIds: string[] | null;
 };
@@ -177,6 +178,13 @@ export default function CmsUsers({
               {labels[s]}
             </label>
           ))}
+          <h4>Product permissions</h4>
+          <label>
+            <input type="checkbox" checked={draft.canCreateSealed === true}
+              onChange={(e) => setDraft({ ...draft, canCreateSealed: e.target.checked })} />
+            Create sealed products
+          </label>
+          <p className="muted">Allows manual creation and bulk imports. Sealed products section access is also required.</p>
           <h4>Warehouses</h4>
           {locations.map((l) => (
             <label key={l.id}>

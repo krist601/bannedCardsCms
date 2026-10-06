@@ -1,0 +1,68 @@
+// Integration test: only creates/restores a new disposable database and unique S3 prefix.
+const assert=require('node:assert/strict');
+const {createRequire}=require('node:module');
+const {execFileSync}=require('node:child_process');
+const {randomUUID}=require('node:crypto');
+const {mkdtempSync,rmSync}=require('node:fs');
+const {tmpdir}=require('node:os');
+const {join,resolve}=require('node:path');
+const backend=resolve(process.argv[2] || '../bannedCards-server');
+const req=createRequire(join(backend,'package.json'));
+req('@medusajs/framework/utils').loadEnv('development',backend);
+req('ts-node').register({transpileOnly:true,compilerOptions:{module:'CommonJS',moduleResolution:'node'}});
+const id=Date.now().toString(),dbname='cms_backup_test_'+id;
+const original=new URL(process.env.DATABASE_URL);
+if(!['localhost','127.0.0.1'].includes(original.hostname))throw Error('Integration test only permits a local database.');
+const container=process.env.BACKUP_POSTGRES_CONTAINER;
+if(!container)throw Error('Configure local backups first.');
+const user=decodeURIComponent(original.username);
+original.pathname='/'+dbname;
+process.env.DATABASE_URL=original.toString();
+process.env.BACKUP_NAMESPACE='test-'+id;
+const prefix='database/'+process.env.BACKUP_NAMESPACE+'/';
+const {S3Client,ListObjectsV2Command,GetObjectCommand,PutObjectCommand,DeleteObjectCommand}=req('@aws-sdk/client-s3');
+const Redis=req('ioredis');
+const s3=new S3Client({endpoint:process.env.S3_ENDPOINT,region:process.env.S3_REGION,forcePathStyle:true,credentials:{accessKeyId:process.env.S3_ACCESS_KEY_ID,secretAccessKey:process.env.S3_SECRET_ACCESS_KEY}});
+const Bucket=process.env.BACKUP_BUCKET;
+const api=req(join(backend,'src/lib/database-backups.ts'));
+const scope={resolve:name=>name==='cache'?{clear:async()=>{}}:{error:()=>{}}};
+const sql=query=>execFileSync('docker',['exec',container,'psql','-v','ON_ERROR_STOP=1','-U',user,'-d',dbname,'-tAc',query],{encoding:'utf8'}).trim();
+const objects=async()=> (await s3.send(new ListObjectsV2Command({Bucket,Prefix:prefix}))).Contents||[];
+const temporary=mkdtempSync(join(tmpdir(),'backup-test-'));
+(async()=>{
+  execFileSync('docker',['exec',container,'createdb','-U',user,dbname]);
+  try {
+    sql("CREATE TABLE sample (id integer PRIMARY KEY, value text); INSERT INTO sample VALUES(1,'original');");
+    await api.queueBackup('backup');await api.runBackupJobs(scope);
+    let status=await api.backupStatus();assert.equal(status.operation.status,'completed');assert.equal(status.rows.length,1);
+    const backup=status.rows[0];
+    const publicResponse=await fetch(`${process.env.S3_ENDPOINT}/${Bucket}/${prefix}${backup.id}.enc`);assert.equal(publicResponse.status,403);
+    sql("UPDATE sample SET value='changed'; INSERT INTO sample VALUES(2,'new');");
+    await api.queueBackup('restore',backup.id);await api.runBackupJobs(scope);
+    status=await api.backupStatus();assert.equal(status.operation.status,'completed',status.operation.message);assert.ok(status.operation.safetyBackupId);assert.equal(status.maintenance,false);
+    assert.equal(sql('SELECT value FROM sample ORDER BY id'),'original');
+    const archive=join(temporary,'test.dump');await api.pgTool('pg_dump',['--format=custom','--no-owner','--no-acl'],archive);
+    sql("UPDATE sample SET value='retained'; CREATE TABLE extra (id integer REFERENCES sample(id));");
+    await assert.rejects(api.pgTool('pg_restore',['--dbname',dbname,'--clean','--if-exists','--single-transaction','--no-owner','--no-acl'],undefined,archive));
+    assert.equal(sql('SELECT value FROM sample'),'retained');
+    await api.queueBackup('restore',backup.id);await api.runBackupJobs(scope);
+    status=await api.backupStatus();assert.equal(status.operation.status,'failed');assert.match(status.operation.message,/schema differs/);assert.equal(status.maintenance,false);
+    sql('DROP TABLE extra;');
+    const source=await s3.send(new GetObjectCommand({Bucket,Key:prefix+backup.id+'.enc'}));
+    const bytes=Buffer.from(await source.Body.transformToByteArray());bytes[0]^=1;
+    await s3.send(new PutObjectCommand({Bucket,Key:prefix+backup.id+'.enc',Body:bytes}));
+    await api.queueBackup('restore',backup.id);await api.runBackupJobs(scope);
+    status=await api.backupStatus();assert.equal(status.operation.status,'failed');assert.equal(sql('SELECT value FROM sample'),'retained');assert.equal(status.maintenance,false);
+    const oldId=`${Date.now()-15*86400000}-${randomUUID()}`;
+    await s3.send(new PutObjectCommand({Bucket,Key:prefix+oldId+'.enc',Body:'expired orphan'}));
+    await s3.send(new PutObjectCommand({Bucket,Key:prefix+'keep.txt',Body:'unrelated'}));
+    await api.runBackupJobs(scope);await api.runBackupJobs(scope);
+    assert.equal((await api.listBackups()).filter(row=>row.kind==='scheduled').length,1);
+    const keys=(await objects()).map(item=>item.Key);assert.ok(!keys.includes(prefix+oldId+'.enc'));assert.ok(keys.includes(prefix+'keep.txt'));
+    console.log('PASS: encrypted S3 backup; private access; successful restore; safety snapshot; atomic failure rollback; schema mismatch; corrupt archive; daily deduplication; scoped retention.');
+  } finally {
+    for(const item of await objects())await s3.send(new DeleteObjectCommand({Bucket,Key:item.Key}));
+    const redis=new Redis(process.env.REDIS_URL);const keys=await redis.keys('cms-backups:'+process.env.BACKUP_NAMESPACE+':*');if(keys.length)await redis.del(...keys);await redis.quit();
+    execFileSync('docker',['exec',container,'dropdb','-U',user,dbname]);rmSync(temporary,{recursive:true,force:true});
+  }
+})().then(()=>process.exit(0),error=>{console.error(error.message);process.exit(1)});

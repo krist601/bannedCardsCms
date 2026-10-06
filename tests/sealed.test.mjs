@@ -5,6 +5,7 @@ import ts from 'typescript';
 const exports={};
 const flowNames=['createProductsWorkflow','updateProductsWorkflow','updateProductVariantsWorkflow','createInventoryLevelsWorkflow','linkSalesChannelsToStockLocationWorkflow'];
 const deps={'node:crypto':{randomUUID:()=> 'test-unique-id'},'@medusajs/framework/utils':{Modules:{PRODUCT:'product',LOCKING:'locking',INVENTORY:'inventory',STOCK_LOCATION:'location',SALES_CHANNEL:'channel',FULFILLMENT:'fulfillment'},ContainerRegistrationKeys:{QUERY:'query'}},'@medusajs/medusa/core-flows':Object.fromEntries(flowNames.map(name=>[name,scope=>({run:args=>scope.resolve('flows')[name](args)})]))};
+deps['./cms-stores']={allowedStockChannels:async(_scope,_location,ids)=>ids,productStoreChannels:async(_scope,id)=>[{id}]};
 new Function('require','exports',ts.transpileModule(fs.readFileSync('server-module/src/lib/cms-sealed.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(name=>deps[name],exports);
 const categories=[{id:'root',handle:'sealed-products',name:'Sealed'},{id:'boxes',handle:'sealed-booster-boxes',name:'Boxes',parent_category_id:'root'},{id:'nested',handle:'nested',parent_category_id:'boxes'},{id:'singles',handle:'singles'}];
 function scenario(){

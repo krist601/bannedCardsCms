@@ -58,10 +58,12 @@ export default function SealedProducts({
   request,
   locations,
   defaultWarehouse,
+  canCreate,
 }: {
   request: (path: string, body?: unknown) => Promise<any>;
   locations: { id: string; name?: string }[];
   defaultWarehouse: string;
+  canCreate: boolean;
 }) {
   const [finder, setFinder] = useState(false);
   const [rows, setRows] = useState<Product[]>([]),
@@ -190,14 +192,14 @@ export default function SealedProducts({
     setForm((f) => ({ ...f, [key]: value }));
   return (
     <>
-      {finder && (
+      {finder && canCreate && (
         <SealedFinder
           request={request}
           onSaved={() => setRevision((x) => x + 1)}
           onClose={() => setFinder(false)}
         />
       )}
-      <div className="table-toolbar">
+      {canCreate && <div className="table-toolbar">
         <button className="primary" onClick={() => setFinder(true)}>
           Find products by set
         </button>
@@ -209,7 +211,7 @@ export default function SealedProducts({
           ＋ New sealed product
         </button>
 
-      </div>
+      </div>}
       {error && (
         <p className="alert error" role="alert">
           {error}

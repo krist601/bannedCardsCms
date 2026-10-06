@@ -18,6 +18,12 @@ function load(file, dependencies = {}) {
 }
 const access = load("server-module/src/lib/cms-access.ts");
 const permissions = load("server-module/src/lib/cms-permissions.ts");
+test('inventory warehouse filter excludes other stock before pagination',async()=>{
+  const printings=[{id:'p1',set_id:'s',name:'First',collector_number:'1'},{id:'p2',set_id:'s',name:'Second',collector_number:'2'}];
+  const services={tcgCatalog:{listAndCountCardPrintings:async()=>[printings,2],listAndCountCardListings:async()=>[[{id:'l1',printing_id:'p1',variant_id:'v1'},{id:'l2',printing_id:'p2',variant_id:'v2'}],2],listAndCountCardSets:async()=>[[{id:'s',code:'FRA'}],1],retrieveCardSet:async()=>({code:'FRA'})},query:{graph:async({filters})=>({data:[{inventory_items:[{inventory_item_id:filters.id}]}]})},inventory:{listInventoryLevels:async filters=>{assert.equal(filters.location_id,'banned');return filters.inventory_item_id==='v1'?[{location_id:'banned',available_quantity:1,reserved_quantity:0}]:[]}}};
+  const res=response();await cmsRoutes.GET({query:{resource:'stock',location_id:'banned'},scope:{resolve:n=>services[n]}},res);
+  assert.equal(res.body.count,1);assert.equal(res.body.rows[0].id,'l1');assert.equal(res.body.rows[0].levels[0].available_quantity,1);
+});
 test("CMS access requires a literal true flag on the stored user", () => {
   for (const user of [
     null,
@@ -44,10 +50,12 @@ const middlewareRoutes = load("server-module/src/api/middlewares.ts", {
   "@medusajs/framework/utils": { Modules: { USER: "user" } },
   "../lib/cms-access": access,
   "../lib/cms-permissions": permissions,
+  "../lib/store-warehouse-scope": {storeCartGuard:()=>{}},
+  "../lib/database-backups": {backupMaintenanceMiddleware:()=>{}},
 }).default.routes;
-const middleware = middlewareRoutes[0].middlewares[1];
+const middleware = middlewareRoutes.find(r=>r.matcher==="/admin/cms*").middlewares[1];
 test("CMS members cannot bypass permissions with native admin endpoints", async () => {
-  const guard = middlewareRoutes[1].middlewares[1];
+  const guard = middlewareRoutes.find(r=>r.matcher==="/admin*").middlewares[1];
   const user = {metadata:{cmsAccess:{enabled:true,sections:['cards'],warehouseIds:['shared']}}};
   for (const path of ['/admin/users','/admin/stock-locations','/admin/cms/unknown']) {
     const res = response(); let next = false;
@@ -106,6 +114,17 @@ test("API permission is re-read, including after admin access is revoked", async
   assert.equal(res.code, 403);
 });
 const stockRules = load("server-module/src/lib/cms-stock.ts");
+test("bulk stock import accepts quantity without x and split card names",()=>{
+  const rows=stockImport.parseStockImport(`2 Artifist Acumen (FRA) 73
+1 Chandra's Emberling (FRA) 76
+1 Hallway Heckler // Vicious Verse (FRA) 85
+1 Heartstring Puller (FRA) 86
+2 Violent Echoes (FRA) 95
+1 Way of the Pyromancer (FRA) 254`);
+  assert.equal(rows.every(row=>!row.error),true);
+  assert.equal(rows[2].name,"Hallway Heckler // Vicious Verse");
+  assert.equal(rows[0].quantity,2); assert.equal(rows[5].collector,"254");
+});
 let generatedIds = 0;
 const catalogSort = load("server-module/src/lib/cms-catalog-sort.ts");
 const stockImport = load("server-module/src/lib/cms-stock-import.ts");
@@ -117,30 +136,13 @@ const settingsHandlers = load("server-module/src/lib/storefront-settings.ts", {
   "@medusajs/framework/utils": { Modules: { STORE: "store" } },
   "./storefront-sections": sectionRules,
 });
-test("storefront settings route loads, saves and reads visibility without losing metadata", async () => {
-  const store = { id: "store_1", metadata: { other: "retained", storefront_sections: { homeSingles: false } } };
-  const scope = { resolve: name => name === "store" ? {
-    listStores: async () => [store],
-    updateStores: async (id, data) => { assert.equal(id, store.id); store.metadata = data.metadata; },
-  } : {} };
-  const read = response(); read.setHeader = () => {};
-  await routes.GET({ scope, query: { resource: "storefront_settings" } }, read);
-  assert.equal(read.body.settings.homeSingles, false);
-  assert.equal(read.body.settings.sealed, true);
-  const saved = response();
-  await routes.POST({ scope, body: { action: "storefront_settings", settings: { sealed: false } } }, saved);
-  assert.equal(saved.body.settings.sealed, false);
-  assert.equal(store.metadata.other, "retained");
-  await routes.GET({ scope, query: { resource: "storefront_settings" } }, read);
-  assert.equal(read.body.settings.sealed, false);
-  for (const settings of [{ sealed: "false" }, { unknown: true }, [], null]) {
-    const invalid = response();
-    await routes.POST({ scope, body: { action: "storefront_settings", settings } }, invalid);
-    assert.equal(invalid.code, 400);
-  }
-});
-const routes = load("server-module/src/api/admin/cms/route.ts", {
+const cmsRoutes = load("server-module/src/api/admin/cms/route.ts", {
   "../../../lib/cms-users": {cmsUsers:()=>{}},
+  "../../../lib/cms-backups": {cmsBackups:()=>{}},
+  "../../../lib/cms-stores": {cmsStores:()=>{},allowedStockChannels:async(_scope,_location,ids)=>ids,productStoreChannels:async(_scope,id)=>[{id}]},
+  "../../../lib/cms-set-prices": {previewSetPrices:()=>{}},
+  "../../../lib/cms-pricing-settings": {readPricing:async()=>({rate:750,minimum:300}),pricingSettings:()=>{}},
+  "../../../lib/cms-base-prices": {basePrice:(p,finish)=>p.attributes?.base_prices_clp?.[finish] ?? null},
   "../../../lib/storefront-settings": settingsHandlers,
   "../../../lib/cms-set-groups": setGroups,
   "../../../lib/cms-catalog-sort": catalogSort,
@@ -180,9 +182,20 @@ const routes = load("server-module/src/api/admin/cms/route.ts", {
   "../../../scripts/import-scryfall-set": { default: async () => {} },
   "../../../lib/cms-access": access,
 });
+test("storefront settings route loads, saves and reads visibility without losing metadata", async () => {
+  const store = { id: "store_1", metadata: { other: "retained", storefront_sections: { homeSingles: false } } };
+  const scope = { resolve: name => name === "store" ? {listStores: async () => [store], updateStores: async (id, data) => { assert.equal(id, store.id); store.metadata = data.metadata; }} : {} };
+  const read = response(); read.setHeader = () => {};
+  await cmsRoutes.GET({ scope, query: { resource: "storefront_settings" } }, read);
+  assert.equal(read.body.settings.homeSingles, false); assert.equal(read.body.settings.sealed, true);
+  const saved = response(); await cmsRoutes.POST({ scope, body: { action: "storefront_settings", settings: { sealed: false } } }, saved);
+  assert.equal(saved.body.settings.sealed, false); assert.equal(store.metadata.other, "retained");
+  await cmsRoutes.GET({ scope, query: { resource: "storefront_settings" } }, read); assert.equal(read.body.settings.sealed, false);
+  for (const settings of [{ sealed: "false" }, { unknown: true }, [], null]) { const invalid = response(); await cmsRoutes.POST({ scope, body: { action: "storefront_settings", settings } }, invalid); assert.equal(invalid.code, 400); }
+});
 test("invalid stock request returns 400 before any inventory mutation", async () => {
   const res = response();
-  await routes.POST(
+  await cmsRoutes.POST(
     {
       body: { action: "receive", quantity: -10 },
       scope: { resolve: () => ({}) },
@@ -194,7 +207,7 @@ test("invalid stock request returns 400 before any inventory mutation", async ()
 test("bulk loader rejects too many sets and invalid codes", async () => {
   for (const codes of [[], Array(11).fill("ltr"), ["../secret"], [""]]) {
     const res = response();
-    await routes.POST(
+    await cmsRoutes.POST(
       { body: { action: "import", codes }, scope: { resolve: () => ({}) } },
       res,
     );
@@ -210,7 +223,7 @@ test("open and closed orders are filtered on the server before pagination", asyn
         return { data: [], metadata: { count: 0 } };
       },
     };
-    await routes.GET(
+    await cmsRoutes.GET(
       {
         query: { resource: "orders", status, offset: "30" },
         scope: { resolve: () => query },
@@ -229,7 +242,7 @@ test("open and closed orders are filtered on the server before pagination", asyn
 test("unlinked catalog listing cannot accidentally receive another variant inventory", async () => {
   let queried = false;
   const res = response();
-  await routes.POST(
+  await cmsRoutes.POST(
     {
       body: {
         action: "receive",
@@ -406,7 +419,7 @@ function stockScenario({
 test("subtract decreases the correct warehouse and updates snapshot and audit metadata", async () => {
   const s = stockScenario();
   const res = response();
-  await routes.POST(s.req, res);
+  await cmsRoutes.POST(s.req, res);
   assert.equal(res.code, 200);
   assert.equal(res.body.ok, true);
   assert.deepEqual(s.adjustments, [
@@ -425,7 +438,7 @@ test("subtract cannot consume reserved units or stock from another warehouse", a
   ]) {
     const s = stockScenario(options);
     const res = response();
-    await routes.POST(s.req, res);
+    await cmsRoutes.POST(s.req, res);
     assert.equal(res.code, 409);
     assert.equal(s.adjustments.length, 0);
     assert.equal(s.snapshots.length, 0);
@@ -434,13 +447,13 @@ test("subtract cannot consume reserved units or stock from another warehouse", a
 test("subtract accepts exact available quantity and rejects invalid quantities", async () => {
   const s = stockScenario({ available: 2 });
   const res = response();
-  await routes.POST(s.req, res);
+  await cmsRoutes.POST(s.req, res);
   assert.equal(s.snapshots[0].quantity, 0);
   for (const quantity of [0, -1, 1.5, "2", 1000001]) {
     const t = stockScenario();
     t.req.body.quantity = quantity;
     const r = response();
-    await routes.POST(t.req, r);
+    await cmsRoutes.POST(t.req, r);
     assert.equal(r.code, 400);
     assert.equal(t.adjustments.length, 0);
   }
@@ -448,7 +461,7 @@ test("subtract accepts exact available quantity and rejects invalid quantities",
 test("successful subtraction with failed snapshot reports warning without inviting a second adjustment", async () => {
   const s = stockScenario({ snapshotFailure: true });
   const res = response();
-  await routes.POST(s.req, res);
+  await cmsRoutes.POST(s.req, res);
   assert.equal(res.body.ok, true);
   assert.match(res.body.warning, /Do not repeat/);
   assert.equal(s.adjustments.length, 1);
@@ -457,7 +470,7 @@ test("receive still adds a positive quantity", async () => {
   const s = stockScenario();
   s.req.body.action = "receive";
   const res = response();
-  await routes.POST(s.req, res);
+  await cmsRoutes.POST(s.req, res);
   assert.equal(res.body.ok, true);
   assert.equal(s.adjustments[0].amount, 2);
   assert.equal(s.snapshots[0].quantity, 5);
@@ -476,7 +489,7 @@ test("catalog returns matching set abbreviations and preserves unassigned sets",
     ], 1],
   };
   const res = response();
-  await routes.GET(
+  await cmsRoutes.GET(
     { query: { resource: "cards" }, scope: { resolve: () => catalog } },
     res,
   );
@@ -504,7 +517,7 @@ test("card SKU updates the printing only and preserves catalog attributes", asyn
       update = data;
     },
   };
-  await routes.POST(
+  await cmsRoutes.POST(
     {
       body: { action: "card_sku", printing_id: "printing_1", sku: " RING " },
       scope: {
@@ -619,7 +632,7 @@ function quickAddScenario() {
 test("first plus adds unpriced stock without asking for SKU or price; next plus reuses it", async () => {
   const s = quickAddScenario();
   const res = response();
-  await routes.POST(s.req, res);
+  await cmsRoutes.POST(s.req, res);
   assert.equal(res.code, 201);
   assert.equal(s.listings.length, 1);
   assert.equal(s.levels[0].stocked_quantity, 1);
@@ -628,7 +641,7 @@ test("first plus adds unpriced stock without asking for SKU or price; next plus 
   assert.equal(s.listings[0].metadata.price_pending, true);
   assert.match(s.listings[0].sku, /^BC-/);
   const again = response();
-  await routes.POST(s.req, again);
+  await cmsRoutes.POST(s.req, again);
   assert.equal(again.body.ok, true);
   assert.equal(s.listings.length, 1);
   assert.equal(s.levels[0].stocked_quantity, 2);
@@ -637,16 +650,16 @@ test("Spanish and other-language quick additions preserve the selected language"
   for (const language of ["Spanish", "Japanese", "Other"]) {
     const s = quickAddScenario();
     s.req.body.language = language;
-    await routes.POST(s.req, response());
+    await cmsRoutes.POST(s.req, response());
     assert.equal(s.listings[0].language, language);
   }
 });
 test("entering a price updates Medusa before marking new stock sellable", async () => {
   const s = quickAddScenario();
-  await routes.POST(s.req, response());
+  await cmsRoutes.POST(s.req, response());
   s.req.body = { action: "price", listing_id: "listing_1", price_clp: 12000 };
   const res = response();
-  await routes.POST(s.req, res);
+  await cmsRoutes.POST(s.req, res);
   assert.equal(res.body.ok, true);
   assert.equal(
     s.variantUpdates[0].input.product_variants[0].prices[0].amount,
@@ -655,6 +668,13 @@ test("entering a price updates Medusa before marking new stock sellable", async 
   assert.equal(s.productUpdates[0].input.products[0].status, "published");
   assert.equal(s.listings[0].metadata.price_pending, false);
   assert.equal(s.listings[0].price_clp, 12000);
+  assert.equal(s.listings[0].metadata.price_source, "custom");
+});
+test('new stock inherits its printing base price and finish',async()=>{
+ const s=quickAddScenario();s.req.scope.resolve('tcgCatalog').retrieveCardPrinting=async()=>({id:'printing_1',name:'Jace',attributes:{base_prices_clp:{non_foil:10000,foil:15000}}});
+ await cmsRoutes.POST(s.req,response());
+ assert.equal(s.listings[0].price_clp,10000);assert.equal(s.listings[0].metadata.price_source,'scryfall');
+ assert.equal(s.products[0].variants[0].prices[0].amount,10000);assert.equal(s.products[0].status,'published');
 });
 const projection = load("server-module/src/lib/card-catalogue-projection.ts");
 test("unpriced inventory never appears as free or sellable stock in the storefront", () => {
@@ -687,7 +707,7 @@ test("same card supports NM, LP, other languages and finishes without handle col
   ]) {
     s.req.body = { ...s.req.body, condition, language, finish };
     const res = response();
-    await routes.POST(s.req, res);
+    await cmsRoutes.POST(s.req, res);
     assert.equal(res.code, 201);
   }
   assert.equal(s.products.length, 4);
@@ -801,7 +821,7 @@ test("CMS sets API groups before pagination", async () => {
     metadata: { parent_set_code: "m30" },
   });
   const res = response();
-  await routes.GET(
+  await cmsRoutes.GET(
     {
       query: { resource: "sets", offset: "0" },
       scope: { resolve: () => ({ listCardSets: async () => rows }) },
@@ -829,21 +849,22 @@ function importScenario(text) {
   s.req.body={action:'stock_import_preview',text,condition:'near_mint',location_id:'warehouse_1'};
   return s;
 }
-test('import preview checks exact set, collector and name without changing stock',async()=>{
-  const s=importScenario('2x The One Ring (LTR) 246 *F* S');const res=response();await routes.POST(s.req,res);
+test('import preview checks set and collector while tolerating pasted name typos',async()=>{
+  const s=importScenario('2x The One Ring (LTR) 246 *F* S');const res=response();await cmsRoutes.POST(s.req,res);
   assert.equal(res.body.valid,true);assert.equal(s.products.length,0);
-  for(const text of ['1x The One Ring (LOR) 246','1x The One Ring (LTR) 234','1x Wrong name (LTR) 246']) {
-    s.req.body={...s.req.body,action:'stock_import',text};const invalid=response();await routes.POST(s.req,invalid);assert.equal(invalid.body.applied,false);assert.equal(s.products.length,0);
+  for(const text of ['1x The One Ring (LOR) 246','1x The One Ring (LTR) 234']) {
+    s.req.body={...s.req.body,action:'stock_import',text};const invalid=response();await cmsRoutes.POST(s.req,invalid);assert.equal(invalid.body.applied,false);assert.equal(s.products.length,0);
   }
+  s.req.body={...s.req.body,action:'stock_import_preview',text:'1x Wrong name (LTR) 246'};const corrected=response();await cmsRoutes.POST(s.req,corrected);assert.equal(corrected.body.valid,true);assert.match(corrected.body.rows[0].warning,/Catalog name/);assert.equal(s.products.length,0);
 });
 test('bulk receiving applies quantity and reuses the matching listing',async()=>{
-  const s=importScenario('2x The One Ring (LTR) 246\n3x The One Ring (LTR) 246');s.req.body.action='stock_import';const res=response();await routes.POST(s.req,res);
+  const s=importScenario('2x The One Ring (LTR) 246\n3x The One Ring (LTR) 246');s.req.body.action='stock_import';const res=response();await cmsRoutes.POST(s.req,res);
   assert.equal(res.body.completed,true);assert.equal(s.products.length,1);assert.equal(s.levels[0].stocked_quantity,5);
 });
 test('bulk receiving stops after a failed line and reports partial progress',async()=>{
   const s=importScenario('2x The One Ring (LTR) 246\n3x The One Ring (LTR) 246\n4x The One Ring (LTR) 246');
   s.req.scope.resolve('inventory').adjustInventory=async()=>{throw new Error('warehouse unavailable');};
-  s.req.body.action='stock_import';const res=response();await routes.POST(s.req,res);
+  s.req.body.action='stock_import';const res=response();await cmsRoutes.POST(s.req,res);
   assert.equal(res.body.completed,false);assert.equal(res.body.rows.length,2);assert.equal(res.body.rows[0].ok,true);assert.equal(res.body.rows[1].ok,false);assert.equal(s.levels[0].stocked_quantity,2);
 });
 test('collector ordering is numeric, handles suffixes and puts missing numbers last',()=>{
@@ -853,17 +874,17 @@ test('collector ordering is numeric, handles suffixes and puts missing numbers l
 test('set filter and natural collector order apply before catalog pagination',async()=>{
   const records=Array.from({length:35},(_,i)=>({id:String(i),set_id:'s',collector_number:String(35-i)}));
   const catalog={listAndCountCardPrintings:async(filters)=>{assert.equal(filters.set_id,'s');assert.deepEqual(filters.name,{$ilike:'%Ring%'});return [records,35];},listAndCountCardSets:async()=>[[{id:'s',name:'Set',code:'s'}],1]};
-  const res=response();await routes.GET({query:{resource:'cards',set_id:'s',q:'Ring',offset:30},scope:{resolve:()=>catalog}},res);
+  const res=response();await cmsRoutes.GET({query:{resource:'cards',set_id:'s',q:'Ring',offset:30},scope:{resolve:()=>catalog}},res);
   assert.equal(res.body.count,35);assert.deepEqual(res.body.rows.map(r=>r.collector_number),['31','32','33','34','35']);
 });
 test('inventory filters by the selected set and sorts before enriching the page',async()=>{
   const printings=[{id:'p10',set_id:'s',collector_number:'10',name:'Ten'},{id:'p2',set_id:'s',collector_number:'2',name:'Two'}];
   const services={tcgCatalog:{listAndCountCardPrintings:async(filters)=>{assert.equal(filters.set_id,'s');return [printings,2];},listAndCountCardListings:async(filters)=>{assert.deepEqual(filters.printing_id,['p10','p2']);assert.deepEqual(filters.sku,{$ilike:'%BC%'});return [[{id:'l10',printing_id:'p10'},{id:'l2',printing_id:'p2'}],2];},listAndCountCardSets:async()=>[[{id:'s',code:'s',name:'Set'}],1],retrieveCardSet:async()=>({code:'s',name:'Set'})},inventory:{},query:{}};
-  const res=response();await routes.GET({query:{resource:'stock',set_id:'s',q:'BC'},scope:{resolve:name=>services[name]}},res);
+  const res=response();await cmsRoutes.GET({query:{resource:'stock',set_id:'s',q:'BC'},scope:{resolve:name=>services[name]}},res);
   assert.deepEqual(res.body.rows.map(r=>r.collector_number),['2','10']);assert.equal(res.body.count,2);
 });
 test('empty set returns no inventory without querying unrelated listings',async()=>{
-  const res=response();await routes.GET({query:{resource:'stock',set_id:'empty'},scope:{resolve:()=>({listAndCountCardPrintings:async()=>[[],0]})}},res);
+  const res=response();await cmsRoutes.GET({query:{resource:'stock',set_id:'empty'},scope:{resolve:()=>({listAndCountCardPrintings:async()=>[[],0]})}},res);
   assert.deepEqual(res.body,{rows:[],count:0});
 });
 const datedSets = [
@@ -873,21 +894,21 @@ const datedSets = [
   {id:'unknown',name:'Undated',code:'u',released_at:null},
 ];
 test('dropdown shows visible sets newest first, with missing dates last',async()=>{
-  const res=response();await routes.GET({query:{resource:'set_options'},scope:{resolve:()=>({listAndCountCardSets:async()=>[datedSets,4]})}},res);
+  const res=response();await cmsRoutes.GET({query:{resource:'set_options'},scope:{resolve:()=>({listAndCountCardSets:async()=>[datedSets,4]})}},res);
   assert.deepEqual(res.body.rows.map(r=>r.id),['new','old','unknown']);
 });
 test('all cards group by newest set then natural collector order before pagination',async()=>{
   const printings=[{id:'o1',set_id:'old',collector_number:'1'},{id:'n10',set_id:'new',collector_number:'10'},{id:'n2',set_id:'new',collector_number:'2'},{id:'o2',set_id:'old',collector_number:'2'}];
   const catalog={listAndCountCardSets:async()=>[datedSets,4],listAndCountCardPrintings:async()=>[printings,4]};
-  const res=response();await routes.GET({query:{resource:'cards'},scope:{resolve:()=>catalog}},res);
+  const res=response();await cmsRoutes.GET({query:{resource:'cards'},scope:{resolve:()=>catalog}},res);
   assert.deepEqual(res.body.rows.map(r=>r.id),['n2','n10','o1','o2']);
 });
 test('visibility checkbox persists boolean and preserves Scryfall metadata',async()=>{
   let saved;
   const services={locking:{execute:async(_,fn)=>fn()},tcgCatalog:{retrieveCardSet:async()=>({id:'s',metadata:{parent_set_code:'parent',isVisible:true}}),updateCardSets:async data=>{saved=data;}}};
   const req={body:{action:'set_visibility',set_id:'s',isVisible:false},scope:{resolve:name=>services[name]}};
-  const res=response();await routes.POST(req,res);assert.equal(res.body.ok,true);assert.deepEqual(saved.metadata,{parent_set_code:'parent',isVisible:false});
-  req.body.isVisible='false';const invalid=response();await routes.POST(req,invalid);assert.equal(invalid.code,400);
+  const res=response();await cmsRoutes.POST(req,res);assert.equal(res.body.ok,true);assert.deepEqual(saved.metadata,{parent_set_code:'parent',isVisible:false});
+  req.body.isVisible='false';const invalid=response();await cmsRoutes.POST(req,invalid);assert.equal(invalid.code,400);
   assert.equal(setGroups.groupCmsSets([{id:'s',name:'Set',code:'s',released_at:null,metadata:saved.metadata}])[0].isVisible,false);
 });
 test('storefront directory excludes hidden sets and latest codes; all hidden returns empty success',async()=>{
@@ -916,6 +937,7 @@ test('set import awaits S3 image sync for the imported set and reports failures'
   const previous=process.env.FILE_STORAGE_DRIVER;process.env.FILE_STORAGE_DRIVER='s3';
   let synced;let failSync=false;
   const script=load('server-module/src/scripts/import-scryfall-set.ts',{
+    '../lib/cms-base-prices':{refreshSetBasePrices:async(_scope,code)=>{assert.equal(code,'ltr');return {printings:1,updated:0,custom:0};}},
     '../lib/scryfall-set-import':{importScryfallSet:async()=>({setCode:'ltr',setName:'LTR',discovered:1,created:1,updated:0})},
     './sync-card-images':{default:async input=>{synced=input.args;if(failSync) throw new Error('Storage unavailable');}},
   }).default;

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 const sections = [
+  ["singles", "Singles — master switch", "Hides singles navigation, Home featured singles, the Home singles banner, and the singles catalogue."],
   [
     "sealed",
     "Sealed products — master switch",
@@ -106,7 +107,7 @@ export default function StorefrontSections() {
         <>
           <div className="visibility-groups">
             {[
-              { title: "Sealed products access", keys: ["sealed"] },
+              { title: "Main sections (also hides their Home banner and row)", keys: ["singles", "sealed"] },
               { title: "Home page", keys: ["homeBanner", "homeSealed", "homeSingles"] },
               { title: "Sealed catalog", keys: ["sealedBanner", "sealedCategories", "sealedLatest", "sealedAlmostGone", "sealedDeals", "sealedNew"] },
               { title: "More storefront sections", keys: ["buyCards", "bulkFinder", "family"] },

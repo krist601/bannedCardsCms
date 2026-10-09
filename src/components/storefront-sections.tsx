@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 const sections = [
   ["testCheckout", "Test checkout (orders without payment)", "Lets signed-in shoppers place real orders that are marked Not paid, with no payment taken. Stock is reserved and a summary email is sent. Turn off before real sales."],
+  ["webpay", "Webpay payments (Transbank)", "Shows the Pay with Webpay button at checkout. Shoppers pay by card at Transbank; the order becomes Paid automatically when the payment is approved. Runs in Transbank's test environment (no real charges) until production keys are set on the server."],
   ["custom", "Custom products — master switch", "Hides custom products navigation, its Home banner and Home row, and the custom products page."],
   ["accessories", "Accessories — master switch", "Hides accessories navigation, its Home banner and Home row, and the accessories page."],
   ["homeCustom", "Home: custom products", "Row of the newest custom products. Requires the custom products master switch."],
@@ -115,7 +116,7 @@ export default function StorefrontSections() {
               { title: "Main sections (also hides their Home banner and row)", keys: ["singles", "sealed", "custom", "accessories"] },
               { title: "Home page", keys: ["homeBanner", "homeSealed", "homeSingles", "homeCustom", "homeAccessories"] },
               { title: "Sealed catalog", keys: ["sealedBanner", "sealedCategories", "sealedLatest", "sealedAlmostGone", "sealedDeals", "sealedNew"] },
-              { title: "Checkout", keys: ["testCheckout"] },
+              { title: "Checkout", keys: ["testCheckout", "webpay"] },
               { title: "More storefront sections", keys: ["buyCards", "bulkFinder", "family"] },
             ].map(group => <fieldset key={group.title} className="visibility-group">
               <legend>{group.title}</legend>

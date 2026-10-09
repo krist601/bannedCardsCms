@@ -24,3 +24,13 @@ test('set refresh changes automatic prices and preserves custom and legacy price
  assert.equal(writes.filter(w=>w.name==='updateProductsWorkflow').length,1);
  assert.equal(writes[0].input.product_variants[0].prices[0].amount,3000);
 });
+test('reset overrides custom and legacy prices but keeps a hand-set price when Scryfall has none',async()=>{
+ writes.length=0;
+ const printing={id:'p',attributes:{scryfall_data:{prices:{usd:'4.00'}}}};
+ const listings=[{id:'custom',price_clp:5000,metadata:{price_source:'custom'}},{id:'legacy',price_clp:5000,metadata:{}},{id:'automatic',price_clp:1000,metadata:{price_source:'scryfall'}},{id:'noprice',price_clp:5000,finish:'etched',metadata:{price_source:'custom'}}].map(l=>({finish:'non_foil',...l,printing_id:'p',variant_id:l.id,product_id:l.id}));
+ const updated=[];
+ const catalog={listCardSets:async()=>[{id:'set'}],listCardPrintings:async()=>[printing],updateCardPrintings:async()=>{},listCardListings:async()=>listings,retrieveCardListing:async id=>listings.find(l=>l.id===id),updateCardListings:async l=>updated.push(l)};
+ const summary=await api.refreshSetBasePrices({resolve:n=>n==='locking'?{execute:async(_key,fn)=>fn()}:catalog},'fra',{overrideCustom:true});
+ assert.deepEqual(updated.map(l=>[l.id,l.price_clp,l.metadata.price_source]),[['custom',3000,'scryfall'],['legacy',3000,'scryfall'],['automatic',3000,'scryfall']]);
+ assert.equal(summary.overridden,2);assert.equal(summary.custom,1);
+});

@@ -2,6 +2,7 @@
 import StorefrontSections from "./storefront-sections";
 import CmsUsers from "./cms-users";
 import SetPrices from "./set-prices";
+import SetSync from "./set-sync";
 import NavigationIcon from "./navigation-icon";
 import StoresWarehouses from "./stores-warehouses";
 import PricingSettings from "./pricing-settings";
@@ -39,6 +40,8 @@ type Row = {
   email?: string;
   status?: string;
   display_id?: number;
+  payment?: "paid" | "not_paid";
+  test_order?: boolean;
   created_at?: string;
   released_at?: string;
   collector_number?: string;
@@ -77,6 +80,8 @@ type Page =
   | "sets"
   | "stock"
   | "sealed"
+  | "custom"
+  | "accessories"
   | "orders"
   | "import"
   | "card_import"
@@ -86,6 +91,8 @@ const navigation: { id: Page; label: string; icon: string; group: string }[] = [
   { id: "cards", label: "Card catalog", icon: "▤", group: "Stock" },
   { id: "stock", label: "Inventory", icon: "▦", group: "Stock" },
   { id: "sealed", label: "Sealed products", icon: "▣", group: "Stock" },
+  { id: "custom", label: "Custom products", icon: "✦", group: "Stock" },
+  { id: "accessories", label: "Accessories", icon: "◇", group: "Stock" },
   { id: "orders", label: "Orders", icon: "▣", group: "Stock" },
   { id: "users", label: "Users & access", icon: "♙", group: "Administration" },
   { id: "stores", label: "Stores & warehouses", icon: "▣", group: "Administration" },
@@ -217,6 +224,8 @@ export default function Cms() {
       page === "pricing" ||
       page === "backups" ||
       page === "sealed" ||
+      page === "custom" ||
+      page === "accessories" ||
       page === "settings"
     )
       return;
@@ -616,6 +625,10 @@ export default function Cms() {
                     stock: "Receive new stock and keep your shelves in sync.",
                     sealed:
                       "Manage sealed groups, products, prices and warehouse stock.",
+                    custom:
+                      "Sell your own token packs, custom decks and other made-in-house products.",
+                    accessories:
+                      "Sleeves, dice, playmats and other playing accessories.",
                     orders: "Follow every order, from checkout to completion.",
                     import:
                       "Bring entire sets and their card printings into your catalog.",
@@ -650,7 +663,7 @@ export default function Cms() {
           {page === "backups" && permissions.admin && <DatabaseBackups request={api}/>}
           {page === "users" && permissions.admin && <CmsUsers request={api} locations={locations}/>}
           {page === "stores" && permissions.admin && <StoresWarehouses request={api} onWarehousesChanged={()=>{api("data?resource=locations").then(d=>setLocations(d.rows)).catch(fail)}}/>}
-          {["cards","stock","card_import","sealed"].includes(page) && <label className="table-toolbar">{page === "stock" ? "Warehouse" : "Default warehouse"}<select aria-label="Default warehouse" value={warehouse} onChange={e=>{setWarehouse(e.target.value);if(page === "stock")setOffset(0)}}>{locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>}
+          {["cards","stock","card_import","sealed","custom","accessories"].includes(page) && <label className="table-toolbar">{page === "stock" ? "Warehouse" : "Default warehouse"}<select aria-label="Default warehouse" value={warehouse} onChange={e=>{setWarehouse(e.target.value);if(page === "stock")setOffset(0)}}>{locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>}
           {page === "overview" && (
             <>
               <div className="stats">
@@ -772,8 +785,8 @@ export default function Cms() {
               ← Back to {page === "import" ? "sets" : "card catalog"}
             </button>
           )}
-          {page === "sealed" && (
-            <SealedProducts request={api} locations={locations} defaultWarehouse={warehouse} canCreate={permissions.admin || permissions.canCreateSealed === true} />
+          {(page === "sealed" || page === "custom" || page === "accessories") && (
+            <SealedProducts key={page} section={page} request={api} locations={locations} defaultWarehouse={warehouse} canCreate={page === "sealed" ? permissions.admin || permissions.canCreateSealed === true : true} />
           )}
           {page === "card_import" && (
             <CardImport locations={locations} request={api} defaultWarehouse={warehouse} />
@@ -923,7 +936,7 @@ export default function Cms() {
                     </select>
                   </label>
                 )}
-                {(page === "cards" || page === "stock") && (
+                {(page === "cards" || page === "stock" || page === "sets") && (
                   <form
                     className="search"
                     onSubmit={(e) => {
@@ -934,25 +947,31 @@ export default function Cms() {
                   >
                     <input
                       aria-label={
-                        page === "cards" ? "Search card names" : "Search SKU"
+                        page === "cards" ? "Search card names" : page === "sets" ? "Search sets by name or code" : "Search SKU"
                       }
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
                       placeholder={
                         page === "cards"
                           ? "Search card names…"
-                          : "Search by SKU…"
+                          : page === "sets"
+                            ? "Set name or code (e.g. LTR)…"
+                            : "Search by SKU…"
                       }
                     />
                     <button aria-label="Search">⌕</button>
                   </form>
                 )}
+                {page === "sets" && (
+                  <SetSync request={api} onDone={() => setRevision((x) => x + 1)} />
+                )}
                 <button
                   className="secondary"
+                  title="Reloads this table from your database. Does not contact Scryfall."
                   onClick={() => setRevision((x) => x + 1)}
                   disabled={loading}
                 >
-                  ↻ Refresh
+                  ↻ Reload table
                 </button>
               </div>
               {page === "stock" && printingFilter && (
@@ -1009,6 +1028,7 @@ export default function Cms() {
                                 "Customer",
                                 "Date",
                                 "Status",
+                                "Payment",
                                 "Total",
                                 "",
                               ]
@@ -1278,6 +1298,12 @@ export default function Cms() {
                                     {human(r.status)}
                                   </span>
                                 </td>
+                                <td>
+                                  <span className={`pill payment-pill payment-${r.payment === "paid" ? "paid" : "unpaid"}`}>
+                                    {r.payment === "paid" ? "Paid" : "Not paid"}
+                                  </span>
+                                  {r.test_order && <small className="muted"> test</small>}
+                                </td>
                                 <td>{money(r.total, r.currency_code)}</td>
                                 <td>
                                   <button
@@ -1452,6 +1478,33 @@ export default function Cms() {
                   <dd className="capitalize">{human(selected.status)}</dd>
                   <dt>Placed</dt>
                   <dd>{date(selected.created_at)}</dd>
+                  <dt>Payment</dt>
+                  <dd>
+                    <span className={`pill payment-pill payment-${selected.payment === "paid" ? "paid" : "unpaid"}`}>
+                      {selected.payment === "paid" ? "Paid" : "Not paid"}
+                    </span>{" "}
+                    <button
+                      className="text-button"
+                      disabled={busy}
+                      onClick={async () => {
+                        const paid = selected.payment !== "paid";
+                        setBusy(true);
+                        setError("");
+                        try {
+                          await api("data", { action: "order_payment", order_id: selected.id, paid });
+                          const next = { ...selected, payment: paid ? ("paid" as const) : ("not_paid" as const) };
+                          setSelected(next);
+                          setRows((current) => current.map((row) => (row.id === next.id ? { ...row, payment: next.payment } : row)));
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : "Could not update the payment status");
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      {selected.payment === "paid" ? "Mark as not paid" : "Mark as paid"}
+                    </button>
+                  </dd>
                   <dt>Total</dt>
                   <dd>{money(selected.total, selected.currency_code)}</dd>
                 </dl>

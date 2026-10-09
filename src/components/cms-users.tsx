@@ -7,6 +7,8 @@ const sections = [
   "sets",
   "stock",
   "sealed",
+  "custom",
+  "accessories",
   "orders",
 ];
 const labels: Record<string, string> = {
@@ -16,6 +18,8 @@ const labels: Record<string, string> = {
   sets: "Sets",
   stock: "Inventory",
   sealed: "Sealed products",
+  custom: "Custom products",
+  accessories: "Accessories",
   orders: "Orders",
 };
 type Member = {

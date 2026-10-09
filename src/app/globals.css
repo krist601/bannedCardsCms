@@ -1582,3 +1582,24 @@ dd {
 .sealed-dialog .import-form { margin: 0; }
 
 .sealed-finder-dialog { width: min(1000px, calc(100vw - 32px)); }
+
+.set-prices { display: flex; flex-direction: column; gap: 16px; }
+.set-prices > p, .set-prices .section-head, .set-prices label { margin: 0; }
+.set-prices > .alert { margin: 0; }
+.set-prices .alert button { float: none; margin-left: 12px; }
+.price-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.price-confirm { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid #f0d9a8; background: #fff8e8; border-radius: 8px; font-size: 13px; line-height: 1.5; }
+.price-confirm p { margin: 0; }
+.price-meta { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.price-meta label { flex: 0 1 280px; gap: 6px; }
+.set-sync-note { font-size: 12px; align-self: center; }
+.set-sync-note.error { color: #a94d40; }
+.image-upload { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 10px; }
+.image-upload label { margin: 0; }
+.image-upload-preview { display: flex; align-items: center; gap: 16px; }
+.image-upload-preview img { width: 96px; height: 96px; object-fit: contain; border: 1px solid #dfe2e8; border-radius: 8px; background: repeating-conic-gradient(#f3f4f7 0 25%, #fff 0 50%) 0 0 / 16px 16px; }
+.image-upload details { font-size: 12px; }
+.image-upload details input { margin-top: 8px; width: 100%; }
+.payment-pill { font-weight: 600; }
+.payment-pill.payment-paid { background: #e3f6ec; color: #1f7a4d; border-color: #bfe8d2; }
+.payment-pill.payment-unpaid { background: #fdeaea; color: #b53030; border-color: #f4c4c4; }

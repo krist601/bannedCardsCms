@@ -54,18 +54,25 @@ const blank: Form = {
   sku: "",
   price_clp: "",
 };
+const rootHandles = { sealed: "sealed-products", custom: "custom-products", accessories: "accessories" } as const;
+const sectionLabels = { sealed: "sealed", custom: "custom", accessories: "accessory" } as const;
 export default function SealedProducts({
   request,
   locations,
   defaultWarehouse,
   canCreate,
+  section = "sealed",
 }: {
+  section?: "sealed" | "custom" | "accessories";
   request: (path: string, body?: unknown) => Promise<any>;
   locations: { id: string; name?: string }[];
   defaultWarehouse: string;
   canCreate: boolean;
 }) {
   const [finder, setFinder] = useState(false);
+  const root = rootHandles[section];
+  const noun = sectionLabels[section];
+  const isSealed = section === "sealed";
   const [rows, setRows] = useState<Product[]>([]),
     [categories, setCategories] = useState<Category[]>([]),
     [count, setCount] = useState(0);
@@ -80,6 +87,7 @@ export default function SealedProducts({
     [notice, setNotice] = useState("");
   const [editing, setEditing] = useState<Product | null | undefined>(undefined),
     [form, setForm] = useState<Form>(blank);
+  const [uploading, setUploading] = useState(false);
   const [warehouse, setWarehouse] = useState(""),
     [quantity, setQuantity] = useState("1");
   const dialog = useRef<HTMLDialogElement>(null);
@@ -95,7 +103,7 @@ export default function SealedProducts({
     setLoading(true);
     setError("");
     request(
-      `data?resource=sealed&offset=${offset}&q=${encodeURIComponent(search)}&category_id=${encodeURIComponent(group)}`,
+      `data?resource=sealed&section=${section}&offset=${offset}&q=${encodeURIComponent(search)}&category_id=${encodeURIComponent(group)}`,
     )
       .then((d) => {
         if (current) {
@@ -126,7 +134,7 @@ export default function SealedProducts({
     setError("");
     setNotice("");
     try {
-      const result = await request("data", body);
+      const result = await request("data", { ...body, section });
       if (inline)
         setRows((current) =>
           current.map((p) =>
@@ -179,7 +187,7 @@ export default function SealedProducts({
             thumbnail: p.thumbnail || "",
             status: p.status === "published" ? "published" : "draft",
             category_id:
-              p.categories.find((c) => c.handle !== "sealed-products")?.id ||
+              p.categories.find((c) => c.handle !== root)?.id ||
               "",
             set: String(p.metadata?.set || ""),
             set_code: String(p.metadata?.set_code || ""),
@@ -188,11 +196,32 @@ export default function SealedProducts({
         : blank,
     );
   }
+  async function upload(file: File | undefined) {
+    if (!file) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) return setError("Use a PNG, JPEG or WebP image.");
+    if (file.size > 5 * 1024 * 1024) return setError("The image must be 5 MB or smaller.");
+    setUploading(true);
+    setError("");
+    try {
+      const content = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+        reader.onerror = () => reject(new Error("The image could not be read."));
+        reader.readAsDataURL(file);
+      });
+      const result = await request("data", { action: "sealed_image", section, mime_type: file.type, content });
+      field("thumbnail", result.url);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  }
   const field = (key: keyof Form, value: string) =>
     setForm((f) => ({ ...f, [key]: value }));
   return (
     <>
-      {finder && canCreate && (
+      {isSealed && finder && canCreate && (
         <SealedFinder
           request={request}
           onSaved={() => setRevision((x) => x + 1)}
@@ -200,15 +229,15 @@ export default function SealedProducts({
         />
       )}
       {canCreate && <div className="table-toolbar">
-        <button className="primary" onClick={() => setFinder(true)}>
+        {isSealed && <button className="primary" onClick={() => setFinder(true)}>
           Find products by set
-        </button>
+        </button>}
         <button
           className="primary"
           disabled={busy || !categories.length}
           onClick={() => edit(null)}
         >
-          ＋ New sealed product
+          ＋ New {noun} product
         </button>
 
       </div>}
@@ -239,7 +268,7 @@ export default function SealedProducts({
             } catch {}
           }}
         >
-          <h2 id="sealed-dialog-title">{editing ? "Edit sealed product" : "New sealed product"}</h2>
+          <h2 id="sealed-dialog-title">{editing ? `Edit ${noun} product` : `New ${noun} product`}</h2>
           {error && <p className="alert error" role="alert">{error}</p>}
           <div className="sealed-form-grid">
             <label>
@@ -260,7 +289,7 @@ export default function SealedProducts({
               >
                 <option value="">Select group</option>
                 {categories
-                  .filter((c) => c.handle !== "sealed-products")
+                  .filter((c) => c.handle !== root)
                   .map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -278,6 +307,7 @@ export default function SealedProducts({
                 <option value="published">Published</option>
               </select>
             </label>
+            {isSealed && (<>
             <label>
               Set name
               <input
@@ -292,16 +322,17 @@ export default function SealedProducts({
                 onChange={(e) => field("set_code", e.target.value)}
               />
             </label>
+            </>)}
             {!editing && (
               <>
-                <label>
+                {isSealed && <label>
                   Language
                   <input
                     required
                     value={form.language}
                     onChange={(e) => field("language", e.target.value)}
                   />
-                </label>
+                </label>}
                 <label>
                   SKU (optional)
                   <input
@@ -322,14 +353,35 @@ export default function SealedProducts({
                 </label>
               </>
             )}
-            <label>
-              Product image URL
-              <input
-                value={form.thumbnail}
-                onChange={(e) => field("thumbnail", e.target.value)}
-                placeholder="Your storage image URL"
-              />
-            </label>
+            <div className="image-upload">
+              <label>
+                Product image (PNG, JPEG or WebP, up to 5 MB)
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  disabled={uploading || busy}
+                  onChange={(e) => {
+                    void upload(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              {uploading && <p role="status" className="muted">Uploading image…</p>}
+              {form.thumbnail && !uploading && (
+                <div className="image-upload-preview">
+                  <img src={form.thumbnail} alt="Product preview" />
+                  <button type="button" className="secondary" disabled={busy} onClick={() => field("thumbnail", "")}>Remove image</button>
+                </div>
+              )}
+              <details>
+                <summary>Or use an image URL</summary>
+                <input
+                  value={form.thumbnail}
+                  onChange={(e) => field("thumbnail", e.target.value)}
+                  placeholder="https://… or /path/image.png"
+                />
+              </details>
+            </div>
           </div>
           <label>
             Description
@@ -343,7 +395,7 @@ export default function SealedProducts({
               Created with zero stock. Receive stock below after saving.
             </p>
           )}
-          <button className="primary" disabled={busy}>
+          <button className="primary" disabled={busy || uploading}>
             {busy ? "Saving…" : "Save product"}
           </button>{" "}
           <button
@@ -362,16 +414,16 @@ export default function SealedProducts({
           <label>
             Group
             <select
-              aria-label="Sealed group"
+              aria-label="Product group"
               value={group}
               onChange={(e) => {
                 setGroup(e.target.value);
                 setOffset(0);
               }}
             >
-              <option value="">All sealed groups</option>
+              <option value="">All groups</option>
               {categories
-                .filter((c) => c.handle !== "sealed-products")
+                .filter((c) => c.handle !== root)
                 .map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
@@ -388,10 +440,10 @@ export default function SealedProducts({
             }}
           >
             <input
-              aria-label="Search sealed products"
+              aria-label="Search products"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search sealed products…"
+              placeholder="Search products…"
             />
             <button className="primary">Search</button>
           </form>
@@ -423,7 +475,7 @@ export default function SealedProducts({
         </div>
         {loading ? (
           <p role="status" className="empty">
-            Loading sealed products…
+            Loading products…
           </p>
         ) : (
           <div className="table-scroll">
@@ -453,7 +505,7 @@ export default function SealedProducts({
                             </button>
                             <small>
                               {p.categories
-                                .filter((c) => c.handle !== "sealed-products")
+                                .filter((c) => c.handle !== root)
                                 .map((c) => c.name)
                                 .join(" · ")}
                             </small>
@@ -563,7 +615,7 @@ export default function SealedProducts({
             </table>
             {!rows.length && (
               <p className="empty">
-                No sealed products match. Add one or change the filter.
+                No products match. Add one or change the filter.
               </p>
             )}
           </div>

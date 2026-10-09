@@ -1,6 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
 const sections = [
+  ["testCheckout", "Test checkout (orders without payment)", "Lets signed-in shoppers place real orders that are marked Not paid, with no payment taken. Stock is reserved and a summary email is sent. Turn off before real sales."],
+  ["custom", "Custom products — master switch", "Hides custom products navigation, its Home banner and Home row, and the custom products page."],
+  ["accessories", "Accessories — master switch", "Hides accessories navigation, its Home banner and Home row, and the accessories page."],
+  ["homeCustom", "Home: custom products", "Row of the newest custom products. Requires the custom products master switch."],
+  ["homeAccessories", "Home: accessories", "Row of the newest accessories. Requires the accessories master switch."],
   ["singles", "Singles — master switch", "Hides singles navigation, Home featured singles, the Home singles banner, and the singles catalogue."],
   [
     "sealed",
@@ -107,9 +112,10 @@ export default function StorefrontSections() {
         <>
           <div className="visibility-groups">
             {[
-              { title: "Main sections (also hides their Home banner and row)", keys: ["singles", "sealed"] },
-              { title: "Home page", keys: ["homeBanner", "homeSealed", "homeSingles"] },
+              { title: "Main sections (also hides their Home banner and row)", keys: ["singles", "sealed", "custom", "accessories"] },
+              { title: "Home page", keys: ["homeBanner", "homeSealed", "homeSingles", "homeCustom", "homeAccessories"] },
               { title: "Sealed catalog", keys: ["sealedBanner", "sealedCategories", "sealedLatest", "sealedAlmostGone", "sealedDeals", "sealedNew"] },
+              { title: "Checkout", keys: ["testCheckout"] },
               { title: "More storefront sections", keys: ["buyCards", "bulkFinder", "family"] },
             ].map(group => <fieldset key={group.title} className="visibility-group">
               <legend>{group.title}</legend>

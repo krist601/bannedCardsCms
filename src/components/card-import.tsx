@@ -91,8 +91,9 @@ export default function CardImport({
       </pre>
       <p className="muted">
         F = foil; NF or no marker = non-foil. E = English (default), S =
-        Spanish, O = Other, or other:Japanese. Codes and collector numbers must
-        match your catalog. SKU is optional and stays on the card’s catalog row.
+        Spanish, O = Other, or other:Japanese. Cards not yet in your catalog are
+        found on Scryfall and imported automatically (data, image and price)
+        when you receive the stock. SKU is optional and stays on the card’s catalog row.
       </p>
       <label>
         Condition

@@ -78,6 +78,7 @@ test("member response scopes locations and inventory using fresh stored permissi
 });
 function response() {
   return {
+    on() {},
     code: 200,
     body: null,
     status(n) {
@@ -140,7 +141,11 @@ const cmsRoutes = load("server-module/src/api/admin/cms/route.ts", {
   "../../../lib/cms-users": {cmsUsers:()=>{}},
   "../../../lib/cms-backups": {cmsBackups:()=>{}},
   "../../../lib/cms-stores": {cmsStores:()=>{},allowedStockChannels:async(_scope,_location,ids)=>ids,productStoreChannels:async(_scope,id)=>[{id}]},
-  "../../../lib/cms-set-prices": {previewSetPrices:()=>{}},
+  "../../../lib/catalogue-cache": {invalidateCatalogueCache:()=>{}},
+  "../../../lib/cms-orders": {setOrderPayment:()=>{},paymentStateOf:o=>o.metadata?.payment_status??"not_paid"},
+  "../../../lib/cms-set-sync": {startSetSync:()=>({running:true}),setSyncStatus:()=>({running:false})},
+  "../../../lib/cms-set-prices": {previewSetPrices:()=>{},applySetPrices:()=>{}},
+  "../../../lib/cms-card-autoimport": {lookupScryfallCard:async(code,collector)=>globalThis.__scryfall?.[`${code}:${collector}`]??null,importMissingCard:async(_scope,code,collector)=>{globalThis.__imported.push(`${code}:${collector}`);return {printing_id:'printing_1',created:true,warnings:[]};}},
   "../../../lib/cms-pricing-settings": {readPricing:async()=>({rate:750,minimum:300}),pricingSettings:()=>{}},
   "../../../lib/cms-base-prices": {basePrice:(p,finish)=>p.attributes?.base_prices_clp?.[finish] ?? null},
   "../../../lib/storefront-settings": settingsHandlers,
@@ -946,4 +951,16 @@ test('set import awaits S3 image sync for the imported set and reports failures'
     failSync=true;await assert.rejects(script({container:{resolve:()=>({})},args:['LTR']}),/Storage unavailable/);
     process.env.FILE_STORAGE_DRIVER='local';await assert.rejects(script({container:{resolve:()=>({})},args:['LTR']}),/Configure S3/);
   } finally {if(previous===undefined) delete process.env.FILE_STORAGE_DRIVER;else process.env.FILE_STORAGE_DRIVER=previous;}
+});
+
+test('import finds cards missing from the catalog on Scryfall and imports them only when applying',async()=>{
+  globalThis.__scryfall={'new:12':{id:'sf1',name:'Brand New Card',set:'new'}};globalThis.__imported=[];
+  const s=importScenario('1x Brand New Card (NEW) 12\n1x Ghost (NEW) 99');
+  const preview=response();await cmsRoutes.POST(s.req,preview);
+  assert.equal(preview.body.rows[0].import_card,true);assert.match(preview.body.rows[0].warning,/will import Brand New Card/);
+  assert.match(preview.body.rows[1].error,/not found/);assert.equal(globalThis.__imported.length,0);
+  s.req.body={...s.req.body,action:'stock_import',text:'1x Brand New Card (NEW) 12'};const applied=response();await cmsRoutes.POST(s.req,applied);
+  assert.deepEqual(globalThis.__imported,['new:12']);assert.equal(applied.body.applied,true);
+  s.req.body={...s.req.body,text:'1x Brand New Card (NEW) 12\n1x Ghost (NEW) 99'};globalThis.__imported=[];const blocked=response();await cmsRoutes.POST(s.req,blocked);
+  assert.equal(blocked.body.applied,false);assert.equal(globalThis.__imported.length,0);
 });

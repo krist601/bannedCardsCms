@@ -124,3 +124,10 @@
 - Hero banner: `presentation/hero-banner.tsx` (rendered by hero-carousel.tsx, which still owns the bulk-finder dialog). Home: auto-rotating slides (singles, custom, accessories, sealed) with real product images and prices, shortcuts to /singles?view=added|latest, trust points; follows the Storefront sections switches. Singles page: compact catalogue banner with live card count, filter chips and "Find my list". `/singles?view=latest|added|all` sets the starting filter.
 
 - Orders detail modal shows the checkout data from order metadata/shipping address: phone, Starken branch, boleta/factura + RUT (and company data), customer notes. The store also gets its own email per order (`STORE_ORDER_EMAIL`, default compras@bannedcards.cl).
+
+## Price source (Scryfall or Card Kingdom)
+- Pricing settings has `source`: `scryfall` (default) or `cardkingdom` (card_pricing in store metadata). Saving it also sets the storefront flag `cardKingdomPrices` (footer note).
+- Card Kingdom retail prices (USD, Near Mint) come from MTGJSON, because Card Kingdom's own API blocks servers: `AllPricesToday.json.gz` plus one `<SET>.json.gz` per set to map MTGJSON uuid to Scryfall id (`lib/cardkingdom-prices.ts`). Stored on each printing as `attributes.ck_prices`.
+- `basePrices()` uses `ck_prices` when the source is Card Kingdom and falls back to the Scryfall price per finish; `base_price_sources` records which one was used.
+- Downloading prices (button on the Pricing page, `ck_prices_sync`, and a daily job at 07:30 UTC while Card Kingdom is selected) never changes listings. Listings change only through Sets, "Update prices" / "Reset" (`cms-set-prices.ts`), which also fetch the set's Card Kingdom prices.
+

@@ -122,3 +122,5 @@
 - Account: full page at /mi-cuenta (`presentation/account-page.tsx`, tabs via `?tab=orders|details|security`, `?welcome=1` after registering); the old profile popup was removed. Guests see a sign-in card there. Checkout needs an account: the backend rejects guests, and the storefront sends a guest who presses checkout to account creation, then merges the guest cart into the new account.
 
 - Hero banner: `presentation/hero-banner.tsx` (rendered by hero-carousel.tsx, which still owns the bulk-finder dialog). Home: auto-rotating slides (singles, custom, accessories, sealed) with real product images and prices, shortcuts to /singles?view=added|latest, trust points; follows the Storefront sections switches. Singles page: compact catalogue banner with live card count, filter chips and "Find my list". `/singles?view=latest|added|all` sets the starting filter.
+
+- Orders detail modal shows the checkout data from order metadata/shipping address: phone, Starken branch, boleta/factura + RUT (and company data), customer notes. The store also gets its own email per order (`STORE_ORDER_EMAIL`, default compras@bannedcards.cl).

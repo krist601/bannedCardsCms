@@ -65,8 +65,21 @@ type Row = {
     first_name?: string;
     last_name?: string;
     address_1?: string;
+    address_2?: string;
     city?: string;
+    province?: string;
+    phone?: string;
+    company?: string;
     country_code?: string;
+  };
+  metadata?: {
+    document_type?: "boleta" | "factura";
+    document_rut?: string;
+    company?: { rut?: string; name?: string; activity?: string; address?: string; comuna?: string };
+    shipping_method?: string;
+    starken_branch?: string;
+    customer_notes?: string;
+    contact_phone?: string;
   };
 };
 type Page =
@@ -1523,16 +1536,45 @@ export default function Cms() {
                 <p>
                   {selected.shipping_address
                     ? [
-                        selected.shipping_address.first_name,
-                        selected.shipping_address.last_name,
-                        selected.shipping_address.address_1,
-                        selected.shipping_address.city,
-                        selected.shipping_address.country_code,
+                        [selected.shipping_address.first_name, selected.shipping_address.last_name].filter(Boolean).join(" "),
+                        [selected.shipping_address.address_1, selected.shipping_address.address_2].filter(Boolean).join(", "),
+                        [selected.shipping_address.city, selected.shipping_address.province].filter(Boolean).join(", "),
+                        selected.shipping_address.country_code?.toUpperCase(),
                       ]
                         .filter(Boolean)
-                        .join(", ")
+                        .join(" · ")
                     : "No shipping address"}
                 </p>
+                {(selected.shipping_address?.phone || selected.metadata?.contact_phone) && (
+                  <p className="muted">Phone: {selected.shipping_address?.phone || selected.metadata?.contact_phone}</p>
+                )}
+                {selected.metadata?.shipping_method && (
+                  <p className="muted">
+                    Shipping: Starken · pay on delivery
+                    {selected.metadata.starken_branch ? ` · Branch: ${selected.metadata.starken_branch}` : ""}
+                  </p>
+                )}
+                {selected.metadata?.document_type && (
+                  <>
+                    <h3>Tax document</h3>
+                    <p>
+                      <b>{selected.metadata.document_type === "factura" ? "Factura" : "Boleta"}</b> · RUT {selected.metadata.document_rut}
+                    </p>
+                    {selected.metadata.company && (
+                      <p className="muted">
+                        {[selected.metadata.company.name, selected.metadata.company.activity, selected.metadata.company.address, selected.metadata.company.comuna]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                    )}
+                  </>
+                )}
+                {selected.metadata?.customer_notes && (
+                  <>
+                    <h3>Customer notes</h3>
+                    <p>{selected.metadata.customer_notes}</p>
+                  </>
+                )}
               </>
             ) : (
               <form onSubmit={save}>
